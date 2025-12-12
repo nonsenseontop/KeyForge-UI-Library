@@ -119,10 +119,15 @@ end
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
-for _, connection in pairs(getconnections(player.Idled)) do
-	if connection.Enabled then
-    	connection:Disable()
-    end
+-- Safely disable idle kick if getconnections is available
+if typeof(getconnections) == "function" then
+	for _, connection in pairs(getconnections(player.Idled)) do
+		if connection.Enabled then
+			connection:Disable()
+		end
+	end
+else
+	warn("[KFHub] getconnections not available, idle kick prevention disabled")
 end
 
 
