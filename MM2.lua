@@ -125,6 +125,54 @@ for _, connection in pairs(getconnections(player.Idled)) do
     end
 end
 
+_G.Murder = _G.Murder or nil
+_G.Sheriff = _G.Sheriff or nil
+_G.Hero = _G.Hero or nil
+_G.roles = _G.roles or {}
+
+local function IsAlive(plier)
+    if not plier then return false end
+    local getPlayerData = game.ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+    if not getPlayerData then
+        return false
+    end
+    local success, result = pcall(function()
+        return getPlayerData:InvokeServer()
+    end)
+    if success then
+        _G.roles = result or {}
+        for name, data in pairs(_G.roles) do
+            if plier.Name == name then
+                return not data.Killed and not data.Dead
+            end
+        end
+    end
+    return false
+end
+
+local function UpdateRoles()
+    local getPlayerData = game.ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+    if not getPlayerData then
+        return
+    end
+    local success, result = pcall(function()
+        return getPlayerData:InvokeServer()
+    end)
+    if success then
+        _G.roles = result or {}
+        _G.Murder, _G.Sheriff, _G.Hero = nil, nil, nil
+        for name, data in pairs(_G.roles) do
+            if data.Role == "Murderer" then
+                _G.Murder = name
+            elseif data.Role == "Sheriff" then
+                _G.Sheriff = name
+            elseif data.Role == "Hero" then
+                _G.Hero = name
+            end
+        end
+    end
+end
+
 
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -161,422 +209,6 @@ local searchBarHandler = {}
 local keybindHandler = {}
 local textBoxHandler = {}
 local colorWheelHandler = {}
-
--- Theme and Config Integration
-local cloneref = (cloneref or clonereference or function(instance: any)
-    return instance
-end)
-local HttpService: HttpService = cloneref(game:GetService("HttpService"))
-local filesystemAvailable = exploitEnv and exploitEnv.isfolder and exploitEnv.makefolder and exploitEnv.writefile and exploitEnv.readfile and exploitEnv.listfiles and exploitEnv.isfile and exploitEnv.delfile
-
--- Initialize library properties
-Library.Scheme = {
-    BackgroundColor = Color3.fromRGB(21, 21, 21),
-    MainColor = Color3.fromRGB(31, 31, 31),
-    AccentColor = Color3.fromRGB(0, 170, 255),
-    OutlineColor = Color3.fromRGB(37, 37, 51),
-    FontColor = Color3.fromRGB(168, 168, 168)
-}
-
-Library.Options = {}
-Library.Toggles = {}
-
--- Enhanced registry system for dynamic theme updates
-Library.ElementRegistry = {}
-
-function Library:RegisterElementType(elementType, updateFunction)
-    self.ElementRegistry[elementType] = updateFunction
-end
-
--- Helper function to register elements for saving/loading
-function Library:RegisterOption(element, identifier, elementType, defaultValue)
-    self.Options[identifier] = {
-        Type = elementType,
-        Value = defaultValue,
-        Instance = element,
-        SetValue = function(val, skipCallback)
-            if typeof(element.Set) == "function" then
-                element:Set(val, skipCallback)
-            elseif elementType == "Input" then
-                element.Value = val
-            elseif elementType == "Dropdown" then
-                element:Select(val)
-            end
-        end
-    }
-    return self.Options[identifier]
-end
-
-function Library:RegisterToggle(element, identifier, defaultValue)
-    self.Toggles[identifier] = {
-        Type = "Toggle",
-        Enabled = defaultValue,
-        Instance = element,
-        Set = function(val, skipCallback)
-            if typeof(element.Set) == "function" then
-                element:Set(val, skipCallback)
-            end
-        end
-    }
-    return self.Toggles[identifier]
-end
-
--- Notification system
-Library.NotificationArea = nil
-Library.NotificationList = nil
-Library.Notifications = {}
-Library.NotifySide = "Right"
-
--- DPI scaling support
-Library.DPIScale = 1
-
--- Helper functions for theming
-Library.UpdateColorsUsingRegistry = function()
-    -- This will be implemented when updating element creation
-end
-
-function Library:SetFont(fontName)
-    -- Implement font setting (placeholder)
-    Library.Scheme.Font = Font.fromEnum(Enum.Font[fontName] or Enum.Font.Code)
-end
-
--- Enhanced notification system
-do
-    -- Create notification area when first window is created
-    function Library:InitNotifications()
-        if Library.NotificationArea then return end
-
-        Library.NotificationArea = Instance.new("Frame")
-        Library.NotificationArea.Name = "NotificationArea"
-        Library.NotificationArea.AnchorPoint = Vector2.new(1, 0)
-        Library.NotificationArea.BackgroundTransparency = 1
-        Library.NotificationArea.Position = UDim2.new(1, -6, 0, 6)
-        Library.NotificationArea.Size = UDim2.new(0, 300, 1, -6)
-        Library.NotificationArea.ZIndex = 999
-        Library.NotificationArea.Parent = game:GetService("CoreGui")
-
-        Library.NotificationList = Instance.new("UIListLayout")
-        Library.NotificationList.FillDirection = Enum.FillDirection.Vertical
-        Library.NotificationList.HorizontalAlignment = Enum.HorizontalAlignment.Right
-        Library.NotificationList.VerticalAlignment = Enum.VerticalAlignment.Bottom
-        Library.NotificationList.Padding = UDim.new(0, 6)
-        Library.NotificationList.Parent = Library.NotificationArea
-    end
-
-    function Library:Notify(...)
-        -- Initialize notifications if not done yet
-        self:InitNotifications()
-
-        local Data = {}
-        local Info = select(1, ...)
-
-        if typeof(Info) == "table" then
-            Data.Title = tostring(Info.Title)
-            Data.Description = tostring(Info.Description)
-            Data.Time = Info.Time or 3
-        else
-            Data.Description = tostring(Info)
-            Data.Time = select(2, ...) or 3
-        end
-        Data.Destroyed = false
-
-        -- Create notification frame
-        local FakeBackground = Instance.new("Frame")
-        FakeBackground.Name = "NotificationBackground"
-        FakeBackground.AutomaticSize = Enum.AutomaticSize.Y
-        FakeBackground.BackgroundTransparency = 1
-        FakeBackground.Size = UDim2.fromScale(1, 0)
-        FakeBackground.ZIndex = 1000
-        FakeBackground.Parent = Library.NotificationArea
-
-        local Background = Library:MakeOutline(FakeBackground, 4)
-        Background.AutomaticSize = Enum.AutomaticSize.Y
-        Background.Position = Library.NotifySide:lower() == "left" and UDim2.new(-1, -6, 0, -2) or UDim2.new(1, 6, 0, -2)
-        Background.Size = UDim2.fromScale(1, 0)
-        Library:UpdateDPI(Background, {Position = false, Size = false})
-
-        local Holder = Instance.new("Frame")
-        Holder.Name = "Holder"
-        Holder.BackgroundColor3 = Library.Scheme.BackgroundColor
-        Holder.Position = UDim2.fromOffset(2, 2)
-        Holder.Size = UDim2.new(1, -4, 1, -4)
-        Holder.Parent = Background
-
-        local UICorner = Instance.new("UICorner")
-        UICorner.CornerRadius = UDim.new(0, 3)
-        UICorner.Parent = Holder
-
-        local UIListLayout = Instance.new("UIListLayout")
-        UIListLayout.FillDirection = Enum.FillDirection.Vertical
-        UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-        UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-        UIListLayout.Padding = UDim.new(0, 4)
-        UIListLayout.Parent = Holder
-
-        local UIPadding = Instance.new("UIPadding")
-        UIPadding.PaddingBottom = UDim.new(0, 8)
-        UIPadding.PaddingLeft = UDim.new(0, 8)
-        UIPadding.PaddingRight = UDim.new(0, 8)
-        UIPadding.PaddingTop = UDim.new(0, 8)
-        UIPadding.Parent = Holder
-
-        local TitleLabel
-        local DescriptionLabel
-
-        if Data.Title then
-            TitleLabel = Instance.new("TextLabel")
-            TitleLabel.BackgroundTransparency = 1
-            TitleLabel.Size = UDim2.new(1, 0, 0, 14)
-            TitleLabel.Text = Data.Title
-            TitleLabel.TextColor3 = Library.Scheme.FontColor
-            TitleLabel.TextSize = 14
-            TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-            TitleLabel.Font = Library.Scheme.Font
-            TitleLabel.Parent = Holder
-        end
-
-        if Data.Description then
-            DescriptionLabel = Instance.new("TextLabel")
-            DescriptionLabel.BackgroundTransparency = 1
-            DescriptionLabel.Size = UDim2.new(1, 0, 0, 0)
-            DescriptionLabel.Text = Data.Description
-            DescriptionLabel.TextColor3 = Library.Scheme.FontColor
-            DescriptionLabel.TextSize = 13
-            DescriptionLabel.TextWrapped = true
-            DescriptionLabel.TextXAlignment = Enum.TextXAlignment.Left
-            DescriptionLabel.TextYAlignment = Enum.TextYAlignment.Top
-            DescriptionLabel.Font = Library.Scheme.Font
-            DescriptionLabel.Parent = Holder
-
-            -- Resize based on text
-            local textBounds = TextService:GetTextBoundsAsync({
-                Text = Data.Description,
-                Font = Library.Scheme.Font,
-                Size = 13,
-                Width = 300 - 16
-            })
-            DescriptionLabel.Size = UDim2.new(1, 0, 0, textBounds.Y)
-        end
-
-        -- Resize function
-        local function ResizeNotification()
-            FakeBackground.Size = UDim2.fromOffset(300, UIListLayout.AbsoluteContentSize.Y + 20)
-            Library:UpdateDPI(FakeBackground, {Size = UDim2.fromOffset(300, UIListLayout.AbsoluteContentSize.Y + 20)})
-        end
-
-        local NotificationData = {
-            Title = Data.Title,
-            Description = Data.Description,
-            Time = Data.Time,
-            Destroyed = false,
-
-            Background = FakeBackground,
-            AnimatingBackground = Background,
-
-            Destroy = function(self)
-                if self.Destroyed then return end
-                self.Destroyed = true
-
-                -- Animate out
-                TweenService:Create(Background, TweenInfo.new(0.25), {
-                    Position = Library.NotifySide:lower() == "left" and UDim2.new(-1, -6, 0, -2) or UDim2.new(1, 6, 0, -2)
-                }):Play()
-
-                task.wait(0.25)
-                Library.Notifications[FakeBackground] = nil
-                FakeBackground:Destroy()
-            end
-        }
-
-        Library.Notifications[FakeBackground] = NotificationData
-
-        ResizeNotification()
-        FakeBackground.Visible = true
-
-        -- Animate in
-        TweenService:Create(Background, TweenInfo.new(0.25), {
-            Position = UDim2.fromOffset(-2, -2)
-        }):Play()
-
-        -- Auto destroy
-        task.spawn(function()
-            task.wait(Data.Time)
-            if not NotificationData.Destroyed then
-                NotificationData:Destroy()
-            end
-        end)
-
-        return NotificationData
-    end
-end
-
--- DPI scaling
-function Library:GetTextBounds(text, font, size, width)
-    local params = Instance.new("GetTextBoundsParams")
-    params.Text = text
-    params.Font = font or Library.Scheme.Font
-    params.Size = size * Library.DPIScale
-    params.Width = width or workspace.CurrentCamera.ViewportSize.X - 32
-
-    local bounds = TextService:GetTextBoundsAsync(params)
-    return bounds.X / Library.DPIScale, bounds.Y / Library.DPIScale
-end
-
-function Library:UpdateDPI(instance, properties)
-    if not Library.DPIRegistry then
-        Library.DPIRegistry = {}
-    end
-
-    for property, value in pairs(properties) do
-        if property == "TextSize" then
-            instance[property] = value * Library.DPIScale
-        end
-    end
-end
-
--- Create outline helper
-function Library:MakeOutline(frame, cornerRadius)
-    local outlineHolder = Instance.new("Frame")
-    outlineHolder.Name = "Outline"
-    outlineHolder.BackgroundColor3 = Color3.new(0, 0, 0)
-    outlineHolder.BackgroundTransparency = 1
-    outlineHolder.BorderSizePixel = 0
-    outlineHolder.Position = UDim2.fromOffset(-2, -2)
-    outlineHolder.Size = UDim2.new(1, 4, 1, 4)
-    outlineHolder.ZIndex = frame.ZIndex - 1
-    outlineHolder.Parent = frame
-
-    local outline = Instance.new("Frame")
-    outline.BackgroundColor3 = Library.Scheme.OutlineColor
-    outline.BorderSizePixel = 0
-    outline.Position = UDim2.fromOffset(1, 1)
-    outline.Size = UDim2.new(1, -2, 1, -2)
-    outline.Parent = outlineHolder
-
-    if cornerRadius and cornerRadius > 0 then
-        local corner1 = Instance.new("UICorner")
-        corner1.CornerRadius = UDim.new(0, cornerRadius + 1)
-        corner1.Parent = outlineHolder
-
-        local corner2 = Instance.new("UICorner")
-        corner2.CornerRadius = UDim.new(0, cornerRadius)
-        corner2.Parent = outline
-    end
-
-    return outlineHolder, outline
-end
-
--- Enhanced tooltip system
-Library.TooltipLabel = nil
-Library.CurrentHoverInstance = nil
-
-function Library:InitTooltip()
-    if Library.TooltipLabel then return end
-
-    Library.TooltipLabel = Instance.new("TextLabel")
-    Library.TooltipLabel.Name = "TooltipLabel"
-    Library.TooltipLabel.BackgroundColor3 = Library.Scheme.BackgroundColor
-    Library.TooltipLabel.BorderColor3 = Library.Scheme.OutlineColor
-    Library.TooltipLabel.BorderSizePixel = 1
-    Library.TooltipLabel.TextSize = 14
-    Library.TooltipLabel.TextWrapped = true
-    Library.TooltipLabel.Visible = false
-    Library.TooltipLabel.ZIndex = 10000
-    Library.TooltipLabel.Font = Library.Scheme.Font
-    Library.TooltipLabel.TextColor3 = Library.Scheme.FontColor
-    Library.TooltipLabel.Parent = game:GetService("CoreGui")
-
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 4)
-    UICorner.Parent = Library.TooltipLabel
-
-    local padding = Instance.new("UIPadding")
-    padding.PaddingLeft = UDim.new(0, 6)
-    padding.PaddingRight = UDim.new(0, 6)
-    padding.PaddingTop = UDim.new(0, 4)
-    padding.PaddingBottom = UDim.new(0, 4)
-    padding.Parent = Library.TooltipLabel
-end
-
-function Library:AddTooltip(infoStr, disabledInfoStr, hoverInstance)
-    Library:InitTooltip()
-
-    local TooltipTable = {
-        Disabled = false,
-        Hovering = false,
-        Signals = {},
-    }
-
-    local function DoHover()
-        if Library.CurrentHoverInstance == hoverInstance or (TooltipTable.Disabled and not disabledInfoStr) or (not TooltipTable.Disabled and not infoStr) then
-            return
-        end
-        Library.CurrentHoverInstance = hoverInstance
-
-        Library.TooltipLabel.Text = TooltipTable.Disabled and (disabledInfoStr or infoStr) or infoStr
-        Library.TooltipLabel.Visible = true
-
-        while TooltipTable.Hovering do
-            Library.TooltipLabel.Position = UDim2.fromOffset(mouse.X + 14, mouse.Y + 12)
-
-            -- Resize tooltip based on text
-            local textBounds = TextService:GetTextBoundsAsync({
-                Text = Library.TooltipLabel.Text,
-                Font = Library.Scheme.Font,
-                Size = 14,
-                Width = workspace.CurrentCamera.ViewportSize.X - Library.TooltipLabel.AbsolutePosition.X - 4
-            })
-            Library.TooltipLabel.Size = UDim2.fromOffset(textBounds.X + 12, textBounds.Y + 8)
-
-            RunService.RenderStepped:Wait()
-        end
-
-        Library.TooltipLabel.Visible = false
-        Library.CurrentHoverInstance = nil
-    end
-
-    local function GiveSignal(Connection)
-        local ConnectionType = typeof(Connection)
-        if Connection and (ConnectionType == "RBXScriptConnection" or ConnectionType == "RBXScriptSignal") then
-            table.insert(TooltipTable.Signals, Connection)
-        end
-        return Connection
-    end
-
-    GiveSignal(hoverInstance.MouseEnter:Connect(function()
-        TooltipTable.Hovering = true
-        DoHover()
-    end))
-
-    GiveSignal(hoverInstance.MouseMoved:Connect(DoHover))
-
-    GiveSignal(hoverInstance.MouseLeave:Connect(function()
-        if Library.CurrentHoverInstance ~= hoverInstance then
-            return
-        end
-        TooltipTable.Hovering = false
-        Library.TooltipLabel.Visible = false
-        Library.CurrentHoverInstance = nil
-    end))
-
-    function TooltipTable:Destroy()
-        for Index = #TooltipTable.Signals, 1, -1 do
-            local Connection = table.remove(TooltipTable.Signals, Index)
-            if Connection and Connection.Connected then
-                Connection:Disconnect()
-            end
-        end
-
-        if Library.CurrentHoverInstance == hoverInstance then
-            if Library.TooltipLabel then
-                Library.TooltipLabel.Visible = false
-            end
-            Library.CurrentHoverInstance = nil
-        end
-    end
-
-    return TooltipTable
-end
 
 elementHandler.__index = elementHandler
 windowHandler.__index = function(_, i) return rawget(windowHandler, i) or rawget(elementHandler, i) end
@@ -639,22 +271,11 @@ end
 
 local exploitEnv = getfenv and getfenv() or _G
 
---! Enhanced Config Manager with Advanced Features
+--! Config Manager
 
 local ConfigManager = {}
 local CONFIG_FOLDER = "KeyForgeConfigs"
 local CONFIG_EXTENSION = ".json"
-local DEFAULT_CONFIG_NAME = "default"
-
--- Advanced config features
-local ConfigFeatures = {
-    AutoSave = true,
-    AutoSaveInterval = 30, -- seconds
-    BackupConfigs = true,
-    MaxBackups = 5,
-    EncryptionEnabled = false,
-    ConfigVersion = "1.0"
-}
 
 local function filesystemAvailable()
 	return exploitEnv and exploitEnv.isfolder and exploitEnv.makefolder and exploitEnv.writefile and exploitEnv.readfile and exploitEnv.listfiles and exploitEnv.isfile and exploitEnv.delfile
@@ -788,12 +409,7 @@ function ConfigManager:Save(name)
 		return false, "Unable to create config folder"
 	end
 	local payload = {
-		data = exportRuntimeConfig(),
-		metadata = {
-			version = ConfigFeatures.ConfigVersion,
-			created = os.time(),
-			name = sanitized
-		}
+		data = exportRuntimeConfig()
 	}
 	local encodedPayload = HttpService:JSONEncode(serializeValue(payload))
 	exploitEnv.writefile(getConfigPath(sanitized), encodedPayload)
@@ -1010,7 +626,828 @@ local function getSequenceColor(sequence)
 	return Color3.fromRGB(255, 255, 255)
 end
 
+local function buildMainTab(tab)
+	if not tab then
+		return
+	end
+	local charSection = tab:Section("Character Settings")
+	charSection:Label("Adjust walkspeed and jumppower.", 13)
+	-- Character settings from MM2
+	local WalkSpeedSlider = charSection:Slider("Walkspeed", function(value)
+		if player and player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+			player.Character.Humanoid.WalkSpeed = value
+		end
+	end, 0, 200)
+	WalkSpeedSlider:Set(16) -- default
 
+	local JumpPowerSlider = charSection:Slider("Jumppower", function(value)
+		if player and player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+			player.Character.Humanoid.JumpPower = value
+		end
+	end, 0, 200)
+	JumpPowerSlider:Set(50) -- default
+
+	charSection:Button("Reset Walkspeed", function()
+		if player and player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+			player.Character.Humanoid.WalkSpeed = 16
+		end
+		WalkSpeedSlider:Set(16)
+	end)
+
+	charSection:Button("Reset Jumppower", function()
+		if player and player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+			player.Character.Humanoid.JumpPower = 50
+		end
+		JumpPowerSlider:Set(50)
+	end)
+
+	local NoClipEnabled = false
+	local NoClipConnection
+	charSection:Toggle("NoClip", NoClipEnabled, function(state)
+		NoClipEnabled = state
+		if state then
+			NoClipConnection = RunService.Stepped:Connect(function()
+				if player.Character then
+					for _, part in pairs(player.Character:GetDescendants()) do
+						if part:IsA("BasePart") then
+							part.CanCollide = false
+						end
+					end
+				end
+			end)
+		else
+			if NoClipConnection then
+				NoClipConnection:Disconnect()
+			end
+			if player.Character then
+				for _, part in pairs(player.Character:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.CanCollide = true
+					end
+				end
+			end
+		end
+	end)
+
+	local AntiAFKEnabled = false
+	local AntiAFKConnection
+	charSection:Toggle("Anti-AFK", AntiAFKEnabled, function(state)
+		AntiAFKEnabled = state
+		if state then
+			AntiAFKConnection = RunService.Heartbeat:Connect(function()
+				pcall(function()
+					local vu = game:GetService("VirtualUser")
+					vu:CaptureController()
+					vu:ClickButton2(Vector2.new())
+				end)
+			end)
+		else
+			if AntiAFKConnection then
+				AntiAFKConnection:Disconnect()
+			end
+		end
+	end)
+end
+
+local function buildMiscTab(tab)
+	if not tab then
+		return
+	end
+	local miscSection = tab:Section("Utilities")
+	miscSection:Label("On-demand helpers for frequently used scripts.", 13)
+	miscSection:Button("Infinite Yield", function()
+		local ok, err = pcall(function()
+			loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+		end)
+		if not ok then
+			warn("Infinite Yield failed:", err)
+		end
+	end)
+
+	local coinSection = tab:Section("Coin Farming")
+	local coinFarmEnabled = false
+	local coinFarmConnection
+	coinSection:Toggle("Coin Auto Farm", false, function(state)
+		coinFarmEnabled = state
+		if state then
+			task.spawn(function()
+				while coinFarmEnabled do
+					if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+						local hrp = player.Character.HumanoidRootPart
+						local coinFound = false
+						for _, map in pairs(workspace:GetChildren()) do
+							if map:IsA("Model") and map:FindFirstChild("CoinContainer") then
+								local container = map.CoinContainer
+								for _, coin in pairs(container:GetChildren()) do
+									if coin:IsA("BasePart") and coin.Name == "Coin" and coin.Transparency == 0 then
+										hrp.CFrame = coin.CFrame
+										coinFound = true
+										task.wait(0.15)
+										if not coinFarmEnabled then break end
+									end
+								end
+							end
+							if not coinFarmEnabled then break end
+						end
+						if not coinFound then
+							task.wait(1)
+						end
+					else
+						task.wait(1)
+					end
+					task.wait()
+				end
+			end)
+		else
+			-- Flag handles stop
+		end
+	end)
+
+	coinSection:Button("TP Coins Once", function()
+		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local hrp = player.Character.HumanoidRootPart
+			for _, map in pairs(workspace:GetChildren()) do
+				if map:IsA("Model") and map:FindFirstChild("CoinContainer") then
+					local container = map.CoinContainer
+					for _, coin in pairs(container:GetChildren()) do
+						if coin:IsA("BasePart") and coin.Name == "Coin" then
+							coin.Position = hrp.Position
+						end
+					end
+				end
+			end
+		end
+	end)
+
+	local roleSection = tab:Section("Role Utilities")
+	roleSection:Label("Actions based on roles.", 13)
+	roleSection:Button("Kill All Innocents", function()
+		-- This might be risky, assume it's for fun
+		for _, plr in pairs(game.Players:GetPlayers()) do
+			if plr ~= player and IsAlive(plr) then
+				-- Simple kill logic, might not work
+				pcall(function()
+					local tool = player.Backpack:FindFirstChildOfClass("Tool")
+					if tool then
+						player.Character.Humanoid:EquipTool(tool)
+						local target = plr.Character and plr.Character:FindFirstChild("Head")
+						if target then
+							tool.Gun:FireServer(target)
+						end
+					end
+				end)
+			end
+		end
+	end)
+
+	roleSection:Button("Spectate Sheriff", function()
+		for _, plr in pairs(game.Players:GetPlayers()) do
+			if Sheriff and game.Players[Sheriff] == plr then
+				-- Spectate logic, similar to aim
+				if plr.Character then
+					player.Character.HumanoidRootPart.Anchored = false
+					player.Character.HumanoidRootPart.CFrame = plr.Character.HumanoidRootPart.CFrame
+				end
+				break
+			end
+		end
+	end)
+end
+
+local function buildConfigTab(tab)
+	if not tab then
+		return
+	end
+	local actionsSection = tab:Section("Config Actions")
+	if not ConfigManager:IsReady() then
+		actionsSection:Label("Filesystem functions unavailable. Config saving is disabled.", 13)
+		return
+	end
+	actionsSection:Label("Type a config name, then use the buttons below to create, load, or delete profiles.", 13)
+	local nameInput = actionsSection:TextBox("Config Name", function() end)
+	local statusLabel = actionsSection:Label("Status: Ready", 13)
+
+	local listSection = tab:Section("Saved Configs")
+	local searchBar = listSection:SearchBar("Search configs")
+
+	local configEntries = {}
+	local selectedEntry = nil
+	local selectedName = ""
+
+	local function setStatus(text)
+		if statusLabel and statusLabel.ChangeText then
+			statusLabel:ChangeText("Status: " .. text)
+		end
+	end
+
+	local function getInputText()
+		return nameInput and nameInput.Instance and nameInput.Instance.BoxBackground and nameInput.Instance.BoxBackground.InnerBox and nameInput.Instance.BoxBackground.InnerBox.TextBoxText and nameInput.Instance.BoxBackground.InnerBox.TextBoxText.Text or ""
+	end
+
+	local function setInputText(text)
+		if nameInput and nameInput.Instance and nameInput.Instance.BoxBackground and nameInput.Instance.BoxBackground.InnerBox and nameInput.Instance.BoxBackground.InnerBox.TextBoxText then
+			nameInput.Instance.BoxBackground.InnerBox.TextBoxText.Text = text or ""
+		end
+	end
+
+	local function deselectEntry()
+		if selectedEntry and selectedEntry.Instance and selectedEntry.Instance.ButtonText then
+			selectedEntry.Instance.ButtonText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+		selectedEntry = nil
+	end
+
+	local function selectEntry(name, entryObject)
+		if selectedEntry ~= entryObject then
+			deselectEntry()
+		end
+		selectedEntry = entryObject
+		selectedName = name
+		setInputText(name)
+		if entryObject and entryObject.Instance and entryObject.Instance.ButtonText then
+			entryObject.Instance.ButtonText.TextColor3 = Color3.fromRGB(0, 255, 106)
+		end
+	end
+
+	local function clearConfigEntries()
+		for _, entry in ipairs(configEntries) do
+			if entry.Remove then
+				entry:Remove()
+			elseif entry.Instance then
+				entry.Instance:Destroy()
+			end
+		end
+		table.clear(configEntries)
+	end
+
+	local function refreshConfigEntries(preselectName)
+		clearConfigEntries()
+		local configs = ConfigManager:GetConfigs()
+		if #configs == 0 then
+			local emptyLabel = searchBar:Label("No configs saved yet.", 13)
+			table.insert(configEntries, emptyLabel)
+			deselectEntry()
+			return
+		end
+		for _, configName in ipairs(configs) do
+			local entryButton
+			entryButton = searchBar:Button(configName, function()
+				selectEntry(configName, entryButton)
+				setStatus("Selected '" .. configName .. "'")
+			end)
+			table.insert(configEntries, entryButton)
+			if preselectName and configName == preselectName then
+				selectEntry(configName, entryButton)
+			end
+		end
+	end
+
+	local function resolveConfigName()
+		local typed = trimString(getInputText())
+		if typed == "" then
+			return selectedName or ""
+		end
+		return typed
+	end
+
+	actionsSection:Button("Create / Save", function()
+		local name = resolveConfigName()
+		if name == "" then
+			setStatus("Enter a valid config name.")
+			return
+		end
+		local success, message = ConfigManager:Save(name)
+		if success then
+			setStatus("Saved '" .. message .. "'")
+			setInputText(message)
+			refreshConfigEntries(message)
+		else
+			setStatus(message or "Save failed")
+		end
+	end)
+
+	actionsSection:Button("Load", function()
+		local name = resolveConfigName()
+		if name == "" then
+			setStatus("Select or enter a config name.")
+			return
+		end
+		local success, message = ConfigManager:Load(name)
+		if success then
+			setStatus("Loaded '" .. message .. "'")
+			setInputText(message)
+			refreshConfigEntries(message)
+		else
+			setStatus(message or "Load failed")
+		end
+	end)
+
+	actionsSection:Button("Delete", function()
+		local name = resolveConfigName()
+		if name == "" then
+			setStatus("Select or enter a config name.")
+			return
+		end
+		local success, message = ConfigManager:Delete(name)
+		if success then
+			setStatus("Deleted '" .. message .. "'")
+			if selectedName == message then
+				selectedName = ""
+				deselectEntry()
+			end
+			setInputText("")
+			refreshConfigEntries()
+		else
+			setStatus(message or "Delete failed")
+		end
+	end)
+
+	refreshConfigEntries()
+end
+
+local function buildEspTab(tab)
+	if not tab then
+		return
+	end
+
+	local espSection = tab:Section("ESP Highlights")
+	local gunDropSection = tab:Section("GunDrop ESP")
+
+	-- ESP highlights
+	local espSettings = {
+		HighlightMurderer = false,
+		HighlightInnocent = false,
+		HighlightSheriff = false,
+		GunDropESP = false
+	}
+
+	local function CreateHighlight(player)
+		if player.Character and not player.Character:FindFirstChild("Highlight") then
+			local highlight = Instance.new("Highlight")
+			highlight.Parent = player.Character
+			highlight.Adornee = player.Character
+			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			return highlight
+		end
+		return player.Character and player.Character:FindFirstChild("Highlight")
+	end
+
+	local function RemoveAllHighlights()
+		for _, player in pairs(game.Players:GetPlayers()) do
+			if (player.Character and player.Character:FindFirstChild("Highlight")) then
+				player.Character.Highlight:Destroy()
+			end
+		end
+	end
+
+	local function UpdateHighlights()
+		for _, player in pairs(game.Players:GetPlayers()) do
+			if (player ~= game.Players.LocalPlayer and player.Character) then
+				local highlight = player.Character:FindFirstChild("Highlight")
+				if not (espSettings.HighlightMurderer or espSettings.HighlightInnocent or espSettings.HighlightSheriff or espSettings.GunDropESP) then
+					if highlight then
+						highlight:Destroy()
+					end
+					return
+				end
+				local shouldHighlight = false
+				local color = Color3.new(0, 1, 0)
+				if (_G.Murder and player.Name == _G.Murder and IsAlive(player) and espSettings.HighlightMurderer) then
+					color = Color3.fromRGB(255, 0, 0)
+					shouldHighlight = true
+				elseif (_G.Sheriff and player.Name == _G.Sheriff and IsAlive(player) and espSettings.HighlightSheriff) then
+					color = Color3.fromRGB(0, 0, 255)
+					shouldHighlight = true
+				elseif (espSettings.HighlightInnocent and IsAlive(player) and player.Name ~= _G.Murder and player.Name ~= _G.Sheriff and player.Name ~= _G.Hero) then
+					color = Color3.fromRGB(0, 255, 0)
+					shouldHighlight = true
+				elseif (_G.Hero and player.Name == _G.Hero and IsAlive(player) and _G.Sheriff and not IsAlive(game.Players[_G.Sheriff]) and espSettings.HighlightSheriff) then
+					color = Color3.fromRGB(255, 250, 0)
+					shouldHighlight = true
+				end
+				if shouldHighlight then
+					highlight = CreateHighlight(player)
+					if highlight then
+						highlight.FillColor = color
+						highlight.OutlineColor = color
+						highlight.Enabled = true
+					end
+				elseif highlight then
+					highlight.Enabled = false
+				end
+			end
+		end
+
+		-- GunDrop ESP
+		if espSettings.GunDropESP then
+			local mapPaths = {"ResearchFacility", "Hospital3", "MilBase", "House2", "Workplace", "Mansion2", "BioLab", "Hotel", "Factory", "Bank2", "PoliceStation"}
+			for _, mapName in ipairs(mapPaths) do
+				local map = workspace:FindFirstChild(mapName)
+				if map then
+					local gunDrop = map:FindFirstChild("GunDrop")
+					if gunDrop and not gunDrop:FindFirstChild("GunDropHighlight") then
+						local highlight = Instance.new("Highlight")
+						highlight.Name = "GunDropHighlight"
+						highlight.FillColor = Color3.fromRGB(255, 215, 0)
+						highlight.OutlineColor = Color3.fromRGB(255, 165, 0)
+						highlight.Adornee = gunDrop
+						highlight.Parent = gunDrop
+					end
+				end
+			end
+		else
+			-- Remove GunDrop highlights
+			local mapPaths = {"ResearchFacility", "Hospital3", "MilBase", "House2", "Workplace", "Mansion2", "BioLab", "Hotel", "Factory", "Bank2", "PoliceStation"}
+			for _, mapName in ipairs(mapPaths) do
+				local map = workspace:FindFirstChild(mapName)
+				if map then
+					local gunDrop = map:FindFirstChild("GunDrop")
+					if gunDrop and gunDrop:FindFirstChild("GunDropHighlight") then
+						gunDrop.GunDropHighlight:Destroy()
+					end
+				end
+			end
+		end
+	end
+
+	espSection:Toggle("Highlight Murderer", false, function(state)
+		espSettings.HighlightMurderer = state
+		UpdateHighlights()
+	end)
+
+	espSection:Toggle("Highlight Innocent", false, function(state)
+		espSettings.HighlightInnocent = state
+		UpdateHighlights()
+	end)
+
+	espSection:Toggle("Highlight Sheriff", false, function(state)
+		espSettings.HighlightSheriff = state
+		UpdateHighlights()
+	end)
+
+	gunDropSection:Toggle("GunDrop Highlight", false, function(state)
+		espSettings.GunDropESP = state
+		UpdateHighlights()
+	end)
+
+	-- Run ESP update
+	task.spawn(function()
+		while true do
+			UpdateRoles()
+			UpdateHighlights()
+			task.wait(1)
+		end
+	end)
+end
+
+local function buildAimTab(tab)
+
+	if not tab then
+
+		return
+
+	end
+
+	local aimSection = tab:Section("Aimbot")
+
+	aimSection:Label("Target specific roles for aiming.", 13)
+
+
+
+	local lockedRole = nil
+
+	local isSpectating = false
+
+	local isCameraLocked = false
+
+	local originalCameraType = workspace.CurrentCamera.CameraType
+
+	local originalCameraSubject = workspace.CurrentCamera.CameraSubject
+
+	local roles = {}
+
+	local Murder, Sheriff, Hero
+
+	local CurrentCamera = workspace.CurrentCamera
+
+
+
+	local function IsAlive(player)
+
+		for name, data in pairs(roles) do
+
+			if player.Name == name then
+
+				return not data.Killed and not data.Dead
+
+			end
+
+		end
+
+		return false
+
+	end
+
+
+
+	local function UpdateRoles()
+
+        local getPlayerData = game.ReplicatedStorage:FindFirstChild("GetPlayerData", true)
+
+        if not getPlayerData then return end
+
+		local success, result = pcall(function()
+
+			return getPlayerData:InvokeServer()
+
+		end)
+
+		if success then
+
+			roles = result or {}
+
+			Murder, Sheriff, Hero = nil, nil, nil
+
+			for name, data in pairs(roles) do
+
+				if data.Role == "Murderer" then
+
+					Murder = name
+
+				elseif data.Role == "Sheriff" then
+
+					Sheriff = name
+
+				elseif data.Role == "Hero" then
+
+					Hero = name
+
+				end
+
+			end
+
+		end
+
+	end
+
+
+
+	local aimModeDropdown = aimSection:Dropdown("Target Role", {"None", "Sheriff", "Murderer"}, "None", function(selected)
+
+		lockedRole = (selected ~= "None" and selected) or nil
+		if selected == "None" then
+			isCameraLocked = false
+			if not isSpectating then
+				CurrentCamera.CameraType = originalCameraType
+				CurrentCamera.CameraSubject = originalCameraSubject
+			end
+		else
+			isCameraLocked = true
+			if not isSpectating then
+				originalCameraType = CurrentCamera.CameraType
+				originalCameraSubject = CurrentCamera.CameraSubject
+				CurrentCamera.CameraType = Enum.CameraType.Scriptable
+			end
+		end
+
+	end)
+
+
+
+	aimSection:Toggle("Spectate Mode", false, function(state)
+
+		isSpectating = state
+
+		if state then
+
+			originalCameraType = CurrentCamera.CameraType
+
+			originalCameraSubject = CurrentCamera.CameraSubject
+
+			CurrentCamera.CameraType = Enum.CameraType.Scriptable
+
+		else
+
+			CurrentCamera.CameraType = originalCameraType
+
+			CurrentCamera.CameraSubject = originalCameraSubject
+
+		end
+
+	end)
+
+
+
+	aimSection:Toggle("Lock Camera", false, function(state)
+
+		isCameraLocked = state
+
+		if state then
+
+			if not isSpectating then
+
+				originalCameraType = CurrentCamera.CameraType
+
+				originalCameraSubject = CurrentCamera.CameraSubject
+
+				CurrentCamera.CameraType = Enum.CameraType.Scriptable
+
+			end
+
+		else
+
+			if not isSpectating then
+
+				CurrentCamera.CameraType = originalCameraType
+
+				CurrentCamera.CameraSubject = originalCameraSubject
+
+			end
+
+		end
+
+	end)
+
+
+
+	local function GetTargetPosition()
+
+		if not lockedRole then
+
+			return nil
+
+		end
+
+		local targetName = (lockedRole == "Sheriff" and Sheriff) or Murder
+
+		if not targetName then
+
+			return nil
+
+		end
+
+		local targetPlayer = game.Players:FindFirstChild(targetName)
+
+		
+
+		local localPlayer = game.Players.LocalPlayer
+
+		if not localPlayer or not localPlayer.Character then
+
+			return nil
+
+		end
+
+		local localPlayerHead = localPlayer.Character:FindFirstChild("Head")
+
+		if not localPlayerHead then
+
+			return nil
+
+		end
+
+	
+
+		if not targetPlayer or not IsAlive(targetPlayer) or not targetPlayer.Character then
+
+			return nil
+
+		end
+
+	
+
+		local targetHead = targetPlayer.Character:FindFirstChild("Head")
+
+		if not targetHead then
+
+			return nil
+
+		end
+
+	
+
+		-- Visibility Check
+
+		local raycastParams = RaycastParams.new()
+
+		raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+		raycastParams.FilterDescendantsInstances = {localPlayer.Character, targetPlayer.Character}
+
+		local origin = localPlayerHead.Position
+
+		local direction = targetHead.Position - origin
+
+		local result = workspace:Raycast(origin, direction, raycastParams)
+
+	
+
+		if result then -- if result is not nil, it means something was hit
+
+			return nil
+
+		end
+
+	
+
+		return targetHead.Position
+
+	end
+
+
+
+	local function UpdateSpectate()
+		if not isSpectating or not lockedRole then
+			return
+		end
+
+		local targetName = (lockedRole == "Sheriff" and Sheriff) or Murder
+		if not targetName then
+			return
+		end
+
+		local targetPlayer = game.Players:FindFirstChild(targetName)
+		if not targetPlayer or not targetPlayer.Character or not IsAlive(targetPlayer) then
+			return
+		end
+
+		local targetChar = targetPlayer.Character
+		local root = targetChar:FindFirstChild("HumanoidRootPart")
+		if not root then
+			return
+		end
+
+		local offset = CFrame.new(0, 2, 8)
+		CurrentCamera.CFrame = root.CFrame * offset
+	end
+
+	local function UpdateLockCamera()
+		if not isCameraLocked or not lockedRole then
+			return
+		end
+
+		local targetPos = GetTargetPosition()
+		if not targetPos then
+			return
+		end
+
+		local currentPos = CurrentCamera.CFrame.Position
+		CurrentCamera.CFrame = CFrame.new(currentPos, targetPos)
+	end
+
+
+
+	local function Update()
+
+		if isSpectating then
+
+			UpdateSpectate()
+
+		elseif isCameraLocked then
+
+			UpdateLockCamera()
+
+		end
+
+	end
+
+
+
+	local aimConnection = RunService.RenderStepped:Connect(Update)
+
+
+
+	local function AutoUpdate()
+
+		while true do
+
+			UpdateRoles()
+
+			task.wait(3)
+
+		end
+
+	end
+
+	task.spawn(AutoUpdate)
+
+
+
+	player.AncestryChanged:Connect(function()
+
+		if not player.Parent and aimConnection then
+
+			aimConnection:Disconnect()
+
+			CurrentCamera.CameraType = originalCameraType
+
+			CurrentCamera.CameraSubject = originalCameraSubject
+
+		end
+
+	end)
+
+end
 
 
 local function createOriginialElements()
@@ -3678,7 +4115,7 @@ function dropdownHandler:ChangeText(newText: string)
 	self.IdentifierText = newText
 end
 
-function elementHandler:Slider(sliderName: string, callback, maximumValue: number, minimumValue: number): table
+function elementHandler:Slider(sliderName: string, callback, minimumValue: number, maximumValue: number): table
 	local slider = setmetatable({}, sliderHandler) -- MAKE RIGHT CLICK AND BAR GOES TO MID
 	local sliderInstance = originalElements.Slider:Clone()
 	local sliderBar = sliderInstance.SliderBackground.SliderInnerBackground.Slider
@@ -4354,419 +4791,37 @@ function elementHandler:ColorWheel(colorWheelName: string, defaultColor, callbac
 	return colorWheel
 end
 
-createOriginalElements()
+createOriginialElements()
 
--- Theme and Config Integration
-local ThemeManager = {} do
-    local ThemeFields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor" }
-    ThemeManager.Folder = "KeyForgeSettings"
-    ThemeManager.SubFolder = ""
-    ThemeManager.Library = Library
-
-    ThemeManager.BuiltInThemes = {
-        ["Default"] = {
-            1,
-            { FontColor = "a8a8a8", MainColor = "1f1f1f", AccentColor = "00aaff", BackgroundColor = "151515", OutlineColor = "252533" },
-        },
-        ["Light"] = {
-            2,
-            { FontColor = "000000", MainColor = "ffffff", AccentColor = "ffaa00", BackgroundColor = "f5f5f5", OutlineColor = "cccccc" },
-        },
-        ["Dark"] = {
-            3,
-            { FontColor = "ffffff", MainColor = "000000", AccentColor = "ff0000", BackgroundColor = "1a1a1a", OutlineColor = "333333" },
+-- Autorun bootstrap to create default window and tabs
+if not _G.__KF_NO_AUTORUN then
+    local ok, err = pcall(function()
+        local win = Library.new("KeyForge", true, 650, 450, "RightControl")
+        local defaultTabs = {
+            {name = "Main", icon = "rbxassetid://6022668911"},
+            {name = "Aim", icon = "rbxassetid://6035190846"},
+            {name = "Esp", icon = "rbxassetid://6031763426"},
+            {name = "Misc", icon = "rbxassetid://6034848752"},
+            {name = "Config", icon = "rbxassetid://6031215982"}
         }
-    }
-
-    function ThemeManager:BuildFolderTree()
-        local paths = { self.Folder .. "/themes" }
-        for _, path in paths do
-            if not exploitEnv.isfolder(path) then
-                exploitEnv.makefolder(path)
-            end
-        end
-    end
-
-    function ThemeManager:SetFolder(folder)
-        self.Folder = folder
-        self:BuildFolderTree()
-    end
-
-    function ThemeManager:ApplyTheme(theme)
-        local customThemeData = self:GetCustomTheme(theme)
-        local data = customThemeData or self.BuiltInThemes[theme]
-
-        if not data then
-            return
-        end
-
-        local scheme = data[2]
-        for idx, val in pairs(customThemeData or scheme) do
-            if idx == "VideoLink" then
-                continue
-            elseif idx == "FontFace" then
-                self.Library:SetFont(Enum.Font[val])
-
-                if self.Library.Options[idx] then
-                    self.Library.Options[idx]:SetValue(val)
-                end
-            else
-                self.Library.Scheme[idx] = Color3.fromHex(val)
-
-                if self.Library.Options[idx] then
-                    self.Library.Options[idx]:SetValueRGB(Color3.fromHex(val))
-                end
-            end
-        end
-
-        self:ThemeUpdate()
-    end
-
-    function ThemeManager:ThemeUpdate()
-        self.Library.UpdateColorsUsingRegistry()
-    end
-
-    function ThemeManager:GetCustomTheme(file)
-        local path = self.Folder .. "/themes/" .. file .. ".json"
-        if not exploitEnv.isfile(path) then
-            return nil
-        end
-
-        local data = exploitEnv.readfile(path)
-        local success, decoded = pcall(HttpService.JSONDecode, HttpService, data)
-
-        if not success then
-            return nil
-        end
-
-        return decoded
-    end
-
-    ThemeManager:BuildFolderTree()
-end
-
-local SaveManager = {} do
-    SaveManager.Folder = "KeyForgeSettings"
-    SaveManager.SubFolder = ""
-    SaveManager.Library = Library
-
-    function SaveManager:BuildFolderTree()
-        local paths = { self.Folder .. "/settings", self.Folder .. "/settings/configs" }
-        for _, path in paths do
-            if not exploitEnv.isfolder(path) then
-                exploitEnv.makefolder(path)
-            end
-        end
-    end
-
-    function SaveManager:SetFolder(folder)
-        self.Folder = folder
-        self:BuildFolderTree()
-    end
-
-    function SaveManager:Save(name)
-        self:CheckFolderTree()
-        local fullPath = self.Folder .. "/settings/" .. name .. ".json"
-        if SaveManager:CheckSubFolder(true) then
-            fullPath = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
-        end
-
-        local data = { objects = {} }
-
-        for idx, toggle in pairs(self.Library.Toggles) do
-            if not toggle.Type then continue end
-            table.insert(data.objects, {
-                type = "Toggle",
-                idx = idx,
-                value = toggle.Enabled or false
-            })
-        end
-
-        for idx, option in pairs(self.Library.Options) do
-            if not option.Type then continue end
-            if option.Type == "Slider" then
-                table.insert(data.objects, {
-                    type = "Slider",
-                    idx = idx,
-                    value = tostring(option.Value or 0)
-                })
-            elseif option.Type == "Dropdown" then
-                table.insert(data.objects, {
-                    type = "Dropdown",
-                    idx = idx,
-                    value = option.Value or ""
-                })
-            elseif option.Type == "ColorPicker" then
-                table.insert(data.objects, {
-                    type = "ColorPicker",
-                    idx = idx,
-                    value = (option.Value or Color3.new()):ToHex(),
-                    transparency = option.Transparency or 0
-                })
-            elseif option.Type == "Toggle" then
-                table.insert(data.objects, {
-                    type = "Toggle",
-                    idx = idx,
-                    value = option.Value or false
-                })
-            elseif option.Type == "Input" then
-                table.insert(data.objects, {
-                    type = "Input",
-                    idx = idx,
-                    text = option.Value or ""
-                })
-            end
-        end
-
-        local success, encoded = pcall(HttpService.JSONEncode, HttpService, data)
-        if success then
-            exploitEnv.writefile(fullPath, encoded)
-            return true
-        end
-        return false, "Encoding failed"
-    end
-
-    function SaveManager:Load(name)
-        self:CheckFolderTree()
-        local file = self.Folder .. "/settings/" .. name .. ".json"
-        if SaveManager:CheckSubFolder(true) then
-            file = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
-        end
-
-        if not exploitEnv.isfile(file) then return false, "File not found" end
-
-        local success, decoded = pcall(HttpService.JSONDecode, HttpService, exploitEnv.readfile(file))
-        if not success then return false, "Decode error" end
-
-        for _, option in pairs(decoded.objects) do
-            if option.type == "Toggle" and self.Library.Toggles[option.idx] then
-                self.Library.Toggles[option.idx]:Set(option.value, function() end)
-            elseif option.type == "Slider" and self.Library.Options[option.idx] then
-                self.Library.Options[option.idx]:SetValue(platform.number(option.value) or 0, true)
-            elseif option.type == "Dropdown" and self.Library.Options[option.idx] then
-                self.Library.Options[option.idx]:SetValue(option.value, true)
-            elseif option.type == "ColorPicker" and self.Library.Options[option.idx] then
-                self.Library.Options[option.idx]:SetValueRGB(Color3.fromHex(option.value), true)
-            elseif option.type == "Input" and self.Library.Options[idx] then
-                self.Library.Options[option.idx]:SetValue(option.text, true)
-            end
-        end
-
-        return true
-    end
-
-    function SaveManager:CheckSubFolder(createFolder)
-        if typeof(self.SubFolder) ~= "string" or self.SubFolder == "" then return false end
-
-        if createFolder == true then
-            local path = self.Folder .. "/settings/" .. self.SubFolder
-            if not exploitEnv.isfolder(path) then
-                exploitEnv.makefolder(path)
-            end
-        end
-
-        return true
-    end
-
-    function SaveManager:CheckFolderTree()
-        if not exploitEnv.isfolder(self.Folder) then
-            self:BuildFolderTree()
-        end
-    end
-
-    SaveManager:BuildFolderTree()
-end
-
--- Integrate Managers to add theme/config tabs
-function Library:ApplyThemeManager(tab, groupboxName)
-    if not tab then return end
-    local groupbox = tab:AddRightGroupbox(groupboxName or "ThemeManager", "palette")
-
-    groupbox:AddLabel("Colors", true)
-    groupbox:AddColorPicker("BackgroundColor", { Default = self.Scheme.BackgroundColor })
-    groupbox:AddColorPicker("MainColor", { Default = self.Scheme.MainColor })
-    groupbox:AddColorPicker("AccentColor", { Default = self.Scheme.AccentColor })
-    groupbox:AddColorPicker("OutlineColor", { Default = self.Scheme.OutlineColor })
-    groupbox:AddColorPicker("FontColor", { Default = self.Scheme.FontColor })
-
-    groupbox:AddDropdown("FontFace", {
-        Text = "Font Face",
-        Default = "Code",
-        Values = { "BuilderSans", "Code", "Fantasy", "Gotham", "Jura", "Roboto", "RobotoMono", "SourceSans" },
-    })
-
-    local themeList = {}
-    for name in pairs(ThemeManager.BuiltInThemes) do
-        table.insert(themeList, name)
-    end
-
-    groupbox:AddDropdown("ThemeList", { Text = "Themes", Values = themeList, Default = 1 })
-    groupbox:AddButton("Apply Theme", function()
-        local selectedTheme = self.Options.ThemeList:GetValue()
-        ThemeManager:ApplyTheme(selectedTheme)
+        local tabs = {}
+		for _, t in ipairs(defaultTabs) do
+			local okTab, res = pcall(function()
+				return win:Tab(t.name, t.icon)
+			end)
+			if okTab and res then
+				tabs[t.name] = res
+			end
+		end
+		buildMainTab(tabs["Main"])
+		buildAimTab(tabs["Aim"])
+		buildEspTab(tabs["Esp"])
+		buildMiscTab(tabs["Misc"])
+		buildConfigTab(tabs["Config"])
     end)
-
-    groupbox:AddButton("Reset to Default", function()
-        ThemeManager:ApplyTheme("Default")
-    end)
-
-    -- Apply changes when color pickers change
-    local colorPickers = { "BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor" }
-    for _, picker in colorPickers do
-        self.Options[picker]:OnChanged(function()
-            self.Scheme[picker] = self.Options[picker].Value
-            ThemeManager:ThemeUpdate()
-        end)
-    end
-
-    self.Options.FontFace:OnChanged(function()
-        self:SetFont(Enum.Font[self.Options.FontFace.Value])
-        ThemeManager:ThemeUpdate()
-    end)
-
-    -- Attach Options to Library elements (this is a basic implementation)
-    function groupbox:AddColorPicker(idx, info)
-        local colorPicker = self:AddColorPicker(idx, info)
-        self.Library.Options[idx] = colorPicker
-        return colorPicker
-    end
-
-    function groupbox:AddDropdown(idx, info)
-        local dropdown = self:AddDropdown(idx, info)
-        self.Library.Options[idx] = dropdown
-        return dropdown
+    if not ok then
+        warn("KeyForge autorun error:", err)
     end
 end
-
-function Library:ApplySaveManager(tab, groupboxName)
-    if not tab then return end
-    local groupbox = tab:AddRightGroupbox(groupboxName or "SaveManager", "hard-drive")
-
-    groupbox:AddInput("ConfigName", { Text = "Config name" })
-    groupbox:AddButton("Save Config", function()
-        local name = self.Options.ConfigName:GetValue() or "default"
-        SaveManager:Save(name)
-        self:Notify("Saved config: " .. name)
-    end)
-
-    groupbox:AddButton("Load Config", function()
-        local name = self.Options.ConfigName:GetValue() or "default"
-        local success = SaveManager:Load(name)
-        if success then
-            self:Notify("Loaded config: " .. name)
-        else
-            self:Notify("Failed to load config: " .. name)
-        end
-    end)
-
-    -- Attach Option
-    function groupbox:AddInput(idx, info)
-        local input = self:AddInput(idx, info)
-        self.Library.Options[idx] = input
-        return input
-    end
-end
-
--- Update existing elements to track in Options/Toggles (minimal integration due to existing structure)
--- Note: Full integration would require modifying all element creation to register with Library.Options/Toggles
-
--- Warning Box System
-function elementHandler:WarningBox(titleText: string, descriptionText: string, warningType: string?): table
-    local warningBox = setmetatable({}, labelHandler)
-    local warningInstance = originalElements.Label:Clone()
-    warningInstance.Name = "WarningBox"
-
-    -- Set warning colors based on type
-    local warningColors = {
-        Warning = Color3.fromRGB(255, 193, 7),  -- Yellow for warnings
-        Error = Color3.fromRGB(220, 53, 69),    -- Red for errors
-        Info = Library.Scheme.AccentColor,      -- Accent for info
-        Success = Color3.fromRGB(25, 135, 84)   -- Green for success
-    }
-
-    local backgroundColor = warningColors[warningType or "Info"] or Library.Scheme.AccentColor
-    warningInstance.LabelBackground.BackgroundColor3 = backgroundColor
-
-    -- Create title text element
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "WarningTitle"
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.Text = titleText or "Warning"
-    titleLabel.TextColor3 = Library.Scheme.FontColor
-    titleLabel.TextSize = 14
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.Size = UDim2.new(1, 0, 0, 18)
-    titleLabel.Parent = warningInstance.LabelBackground
-
-    -- Create description text element
-    local descLabel = Instance.new("TextLabel")
-    descLabel.Name = "WarningDescription"
-    descLabel.BackgroundTransparency = 1
-    descLabel.Font = Enum.Font.Gotham
-    descLabel.Text = descriptionText or "Please check your settings."
-    descLabel.TextColor3 = Library.Scheme.FontColor
-    descLabel.TextSize = 13
-    descLabel.TextWrapped = true
-    descLabel.TextXAlignment = Enum.TextXAlignment.Left
-    descLabel.TextYAlignment = Enum.TextYAlignment.Top
-    descLabel.Position = UDim2.new(0, 4, 0, 20)
-    descLabel.Size = UDim2.new(1, -8, 0, 0)
-    descLabel.Parent = warningInstance.LabelBackground
-
-    -- Calculate required height
-    local textParams = Instance.new("GetTextBoundsParams")
-    textParams.Text = descLabel.Text
-    textParams.Font = descLabel.FontFace
-    textParams.Size = 13
-    textParams.Width = descLabel.AbsoluteSize.X - 8
-    local textBounds = TextService:GetTextBoundsAsync(textParams)
-
-    descLabel.Size = UDim2.new(1, -8, 0, math.max(textBounds.Y, 16))
-    warningInstance.Size = UDim2.new(1, 0, 0, descLabel.Position.Y.Offset + descLabel.Size.Y.Offset + warningInstance.LabelPadding.PaddingTop.Offset + warningInstance.LabelPadding.PaddingBottom.Offset)
-
-    warningBox.Type = "WarningBox"
-    warningBox.IdentifierText = titleText or "Warning"
-    warningBox.Instance = warningInstance
-    warningBox.GuiToRemove = warningInstance
-
-    if self.Type == "SearchBar" then
-        self.ChildedElementsInfo[warningInstance] = warningBox
-    end
-
-    warningInstance.Parent = self.ElementToParentChildren
-
-    -- Add close button
-    local closeButton = Instance.new("TextButton")
-    closeButton.Name = "CloseButton"
-    closeButton.BackgroundTransparency = 1
-    closeButton.Font = Enum.Font.GothamBold
-    closeButton.Text = "×"
-    closeButton.TextColor3 = Library.Scheme.FontColor
-    closeButton.TextSize = 16
-    closeButton.Size = UDim2.new(0, 20, 0, 20)
-    closeButton.Position = UDim2.new(1, -25, 0, 2)
-    closeButton.Parent = warningInstance.LabelBackground
-
-    closeButton.MouseButton1Click:Connect(function()
-        warningInstance:Destroy()
-    end)
-
-    return warningBox
-end
-
--- UI Library for KeyForge
--- This library provides a modular UI system for creating windows, tabs, sections, and various GUI elements in Roblox.
--- It has been refactored from the KeyForge hub script to be a reusable library, making script development easier by providing pre-built UI components.
--- Enhanced with ThemeManager and SaveManager for themes and configurations, plus enhanced features like tooltips and warning boxes.
-
--- Usage Example:
--- local Library = loadstring(game:HttpGet("https://path/to/library"))()  -- or require your module
--- local win = Library.new("My Script", true, 600, 400)  -- Create a window
--- local tab = win:Tab("Main", "rbxassetid://icon")  -- Add a tab
--- local sec = tab:Section("Features")  -- Add a section
--- sec:Toggle("Enable Feature", false, function(state) print("Toggle:", state) end)  -- Add elements like toggles, buttons, sliders, etc.
---
--- This abstraction allows developers to quickly build intuitive UIs without handling low-level GUI creation, promoting cleaner and more maintainable code.
 
 return Library

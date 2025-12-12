@@ -1,119 +1,108 @@
 _G.JxereasExistingHooks = _G.JxereasExistingHooks or {}
-local hookFunctionImpl = hookfunc or hookfunction
-
 if not _G.JxereasExistingHooks.GuiDetectionBypass then
-    local hasSynContext = typeof(syn_context_get) == "function" and typeof(syn_context_set) == "function"
-    local hasNamecallHooks = typeof(getnamecallmethod) == "function" and typeof(setnamecallmethod) == "function"
-    local hasHookSupport = typeof(hookFunctionImpl) == "function" and typeof(hookmetamethod) == "function"
-
-    if hasSynContext and hasNamecallHooks and hasHookSupport then
-        local CoreGui = game.CoreGui
-        local ContentProvider = game.ContentProvider
-        local RobloxGuis = {"RobloxGui", "TeleportGui", "RobloxPromptGui", "RobloxLoadingGui", "PlayerList", "RobloxNetworkPauseNotification", "PurchasePrompt", "HeadsetDisconnectedDialog", "ThemeProvider", "DevConsoleMaster"}
-        
-        local function FilterTable(tbl)
-            local context = syn_context_get()
-            syn_context_set(7)
-            local new = {}
-            for i,v in ipairs(tbl) do --roblox iterates the array part
-                if typeof(v) ~= "Instance" then
-                    table.insert(new, v)
+    local CoreGui = game.CoreGui
+    local ContentProvider = game.ContentProvider
+    local RobloxGuis = {"RobloxGui", "TeleportGui", "RobloxPromptGui", "RobloxLoadingGui", "PlayerList", "RobloxNetworkPauseNotification", "PurchasePrompt", "HeadsetDisconnectedDialog", "ThemeProvider", "DevConsoleMaster"}
+    
+    local function FilterTable(tbl)
+        local context = syn_context_get()
+        syn_context_set(7)
+        local new = {}
+        for i,v in ipairs(tbl) do --roblox iterates the array part
+            if typeof(v) ~= "Instance" then
+                table.insert(new, v)
+            else
+                if v == CoreGui or v == game then
+                    --insert only the default roblox guis
+                    for i,v in pairs(RobloxGuis) do
+                        local gui = CoreGui:FindFirstChild(v)
+                        if gui then
+                            table.insert(new, gui)
+                        end
+                    end
+    
+                    if v == game then
+                        for i,v in pairs(game:GetChildren()) do
+                            if v ~= CoreGui then
+                                table.insert(new, v)
+                            end
+                        end
+                    end
                 else
-                    if v == CoreGui or v == game then
-                        --insert only the default roblox guis
-                        for i,v in pairs(RobloxGuis) do
-                            local gui = CoreGui:FindFirstChild(v)
-                            if gui then
-                                table.insert(new, gui)
-                            end
-                        end
-        
-                        if v == game then
-                            for i,v in pairs(game:GetChildren()) do
-                                if v ~= CoreGui then
-                                    table.insert(new, v)
-                                end
-                            end
-                        end
+                    if not CoreGui:IsAncestorOf(v) then
+                        table.insert(new, v)
                     else
-                        if not CoreGui:IsAncestorOf(v) then
-                            table.insert(new, v)
-                        else
-                            --don't insert it if it's a descendant of a different gui than default roblox guis
-                            for j,k in pairs(RobloxGuis) do
-                                local gui = CoreGui:FindFirstChild(k)
-                                if gui then
-                                    if v == gui or gui:IsAncestorOf(v) then
-                                        table.insert(new, v)
-                                        break
-                                    end
+                        --don't insert it if it's a descendant of a different gui than default roblox guis
+                        for j,k in pairs(RobloxGuis) do
+                            local gui = CoreGui:FindFirstChild(k)
+                            if gui then
+                                if v == gui or gui:IsAncestorOf(v) then
+                                    table.insert(new, v)
+                                    break
                                 end
                             end
                         end
                     end
                 end
             end
-            syn_context_set(context)
-            return new
         end
-        
-        local old
-        old = hookFunctionImpl(ContentProvider.PreloadAsync, function(self, tbl, cb)
-            if self ~= ContentProvider or type(tbl) ~= "table" or type(cb) ~= "function" then --note: callback can be nil but in that case it's useless anyways
-                return old(self, tbl, cb)
+        syn_context_set(context)
+        return new
+    end
+    
+    local old
+    old = hookfunc(ContentProvider.PreloadAsync, function(self, tbl, cb)
+        if self ~= ContentProvider or type(tbl) ~= "table" or type(cb) ~= "function" then --note: callback can be nil but in that case it's useless anyways
+            return old(self, tbl, cb)
+        end
+    
+        --check for any errors that I might've missed (such as table being {[2] = "something"} which causes "Unable to cast to Array")
+        local err
+        task.spawn(function() --TIL pcalling a C yield function inside a C yield function is a bad idea ("cannot resume non-suspended coroutine")
+            local s,e = pcall(old, self, tbl)
+            if not s and e then
+                err = e
             end
-        
-            --check for any errors that I might've missed (such as table being {[2] = "something"} which causes "Unable to cast to Array")
+        end)
+       
+        if err then
+            return old(self, tbl) --don't pass the callback, just in case
+        end
+    
+        tbl = FilterTable(tbl)
+        return old(self, tbl, cb)
+    end)
+    
+    local old
+    old = hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        if self == ContentProvider and (method == "PreloadAsync" or method == "preloadAsync") then
+            local args = {...}
+            if type(args[1]) ~= "table" or type(args[2]) ~= "function" then
+                return old(self, ...)
+            end
+    
             local err
-            task.spawn(function() --TIL pcalling a C yield function inside a C yield function is a bad idea ("cannot resume non-suspended coroutine")
-                local s,e = pcall(old, self, tbl)
+            task.spawn(function()
+                setnamecallmethod(method) --different thread, different namecall method
+                local s,e = pcall(old, self, args[1])
                 if not s and e then
                     err = e
                 end
             end)
-        
+    
             if err then
-                return old(self, tbl) --don't pass the callback, just in case
+                return old(self, args[1])
             end
-        
-            tbl = FilterTable(tbl)
-            return old(self, tbl, cb)
-        end)
-        
-        local old
-        old = hookmetamethod(game, "__namecall", function(self, ...)
-            local method = getnamecallmethod()
-            if self == ContentProvider and (method == "PreloadAsync" or method == "preloadAsync") then
-                local args = {...}
-                if type(args[1]) ~= "table" or type(args[2]) ~= "function" then
-                    return old(self, ...)
-                end
-        
-                local err
-                task.spawn(function()
-                    setnamecallmethod(method) --different thread, different namecall method
-                    local s,e = pcall(old, self, args[1])
-                    if not s and e then
-                        err = e
-                    end
-                end)
-        
-                if err then
-                    return old(self, args[1])
-                end
-        
-                args[1] = FilterTable(args[1])
-                setnamecallmethod(method)
-                return old(self, args[1], args[2])
-            end
-            return old(self, ...)
-        end)
-        
-        _G.JxereasExistingHooks.GuiDetectionBypass = true
-    else
-        warn("[KFHub] Executor is missing hook APIs, skipping gui detection bypass for compatibility.")
-        _G.JxereasExistingHooks.GuiDetectionBypass = true
-    end
+    
+            args[1] = FilterTable(args[1])
+            setnamecallmethod(method)
+            return old(self, args[1], args[2])
+        end
+        return old(self, ...)
+    end)
+    
+    _G.JxereasExistingHooks.GuiDetectionBypass = true
 end
 
 local Players = game:GetService("Players")
@@ -161,422 +150,6 @@ local searchBarHandler = {}
 local keybindHandler = {}
 local textBoxHandler = {}
 local colorWheelHandler = {}
-
--- Theme and Config Integration
-local cloneref = (cloneref or clonereference or function(instance: any)
-    return instance
-end)
-local HttpService: HttpService = cloneref(game:GetService("HttpService"))
-local filesystemAvailable = exploitEnv and exploitEnv.isfolder and exploitEnv.makefolder and exploitEnv.writefile and exploitEnv.readfile and exploitEnv.listfiles and exploitEnv.isfile and exploitEnv.delfile
-
--- Initialize library properties
-Library.Scheme = {
-    BackgroundColor = Color3.fromRGB(21, 21, 21),
-    MainColor = Color3.fromRGB(31, 31, 31),
-    AccentColor = Color3.fromRGB(0, 170, 255),
-    OutlineColor = Color3.fromRGB(37, 37, 51),
-    FontColor = Color3.fromRGB(168, 168, 168)
-}
-
-Library.Options = {}
-Library.Toggles = {}
-
--- Enhanced registry system for dynamic theme updates
-Library.ElementRegistry = {}
-
-function Library:RegisterElementType(elementType, updateFunction)
-    self.ElementRegistry[elementType] = updateFunction
-end
-
--- Helper function to register elements for saving/loading
-function Library:RegisterOption(element, identifier, elementType, defaultValue)
-    self.Options[identifier] = {
-        Type = elementType,
-        Value = defaultValue,
-        Instance = element,
-        SetValue = function(val, skipCallback)
-            if typeof(element.Set) == "function" then
-                element:Set(val, skipCallback)
-            elseif elementType == "Input" then
-                element.Value = val
-            elseif elementType == "Dropdown" then
-                element:Select(val)
-            end
-        end
-    }
-    return self.Options[identifier]
-end
-
-function Library:RegisterToggle(element, identifier, defaultValue)
-    self.Toggles[identifier] = {
-        Type = "Toggle",
-        Enabled = defaultValue,
-        Instance = element,
-        Set = function(val, skipCallback)
-            if typeof(element.Set) == "function" then
-                element:Set(val, skipCallback)
-            end
-        end
-    }
-    return self.Toggles[identifier]
-end
-
--- Notification system
-Library.NotificationArea = nil
-Library.NotificationList = nil
-Library.Notifications = {}
-Library.NotifySide = "Right"
-
--- DPI scaling support
-Library.DPIScale = 1
-
--- Helper functions for theming
-Library.UpdateColorsUsingRegistry = function()
-    -- This will be implemented when updating element creation
-end
-
-function Library:SetFont(fontName)
-    -- Implement font setting (placeholder)
-    Library.Scheme.Font = Font.fromEnum(Enum.Font[fontName] or Enum.Font.Code)
-end
-
--- Enhanced notification system
-do
-    -- Create notification area when first window is created
-    function Library:InitNotifications()
-        if Library.NotificationArea then return end
-
-        Library.NotificationArea = Instance.new("Frame")
-        Library.NotificationArea.Name = "NotificationArea"
-        Library.NotificationArea.AnchorPoint = Vector2.new(1, 0)
-        Library.NotificationArea.BackgroundTransparency = 1
-        Library.NotificationArea.Position = UDim2.new(1, -6, 0, 6)
-        Library.NotificationArea.Size = UDim2.new(0, 300, 1, -6)
-        Library.NotificationArea.ZIndex = 999
-        Library.NotificationArea.Parent = game:GetService("CoreGui")
-
-        Library.NotificationList = Instance.new("UIListLayout")
-        Library.NotificationList.FillDirection = Enum.FillDirection.Vertical
-        Library.NotificationList.HorizontalAlignment = Enum.HorizontalAlignment.Right
-        Library.NotificationList.VerticalAlignment = Enum.VerticalAlignment.Bottom
-        Library.NotificationList.Padding = UDim.new(0, 6)
-        Library.NotificationList.Parent = Library.NotificationArea
-    end
-
-    function Library:Notify(...)
-        -- Initialize notifications if not done yet
-        self:InitNotifications()
-
-        local Data = {}
-        local Info = select(1, ...)
-
-        if typeof(Info) == "table" then
-            Data.Title = tostring(Info.Title)
-            Data.Description = tostring(Info.Description)
-            Data.Time = Info.Time or 3
-        else
-            Data.Description = tostring(Info)
-            Data.Time = select(2, ...) or 3
-        end
-        Data.Destroyed = false
-
-        -- Create notification frame
-        local FakeBackground = Instance.new("Frame")
-        FakeBackground.Name = "NotificationBackground"
-        FakeBackground.AutomaticSize = Enum.AutomaticSize.Y
-        FakeBackground.BackgroundTransparency = 1
-        FakeBackground.Size = UDim2.fromScale(1, 0)
-        FakeBackground.ZIndex = 1000
-        FakeBackground.Parent = Library.NotificationArea
-
-        local Background = Library:MakeOutline(FakeBackground, 4)
-        Background.AutomaticSize = Enum.AutomaticSize.Y
-        Background.Position = Library.NotifySide:lower() == "left" and UDim2.new(-1, -6, 0, -2) or UDim2.new(1, 6, 0, -2)
-        Background.Size = UDim2.fromScale(1, 0)
-        Library:UpdateDPI(Background, {Position = false, Size = false})
-
-        local Holder = Instance.new("Frame")
-        Holder.Name = "Holder"
-        Holder.BackgroundColor3 = Library.Scheme.BackgroundColor
-        Holder.Position = UDim2.fromOffset(2, 2)
-        Holder.Size = UDim2.new(1, -4, 1, -4)
-        Holder.Parent = Background
-
-        local UICorner = Instance.new("UICorner")
-        UICorner.CornerRadius = UDim.new(0, 3)
-        UICorner.Parent = Holder
-
-        local UIListLayout = Instance.new("UIListLayout")
-        UIListLayout.FillDirection = Enum.FillDirection.Vertical
-        UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-        UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-        UIListLayout.Padding = UDim.new(0, 4)
-        UIListLayout.Parent = Holder
-
-        local UIPadding = Instance.new("UIPadding")
-        UIPadding.PaddingBottom = UDim.new(0, 8)
-        UIPadding.PaddingLeft = UDim.new(0, 8)
-        UIPadding.PaddingRight = UDim.new(0, 8)
-        UIPadding.PaddingTop = UDim.new(0, 8)
-        UIPadding.Parent = Holder
-
-        local TitleLabel
-        local DescriptionLabel
-
-        if Data.Title then
-            TitleLabel = Instance.new("TextLabel")
-            TitleLabel.BackgroundTransparency = 1
-            TitleLabel.Size = UDim2.new(1, 0, 0, 14)
-            TitleLabel.Text = Data.Title
-            TitleLabel.TextColor3 = Library.Scheme.FontColor
-            TitleLabel.TextSize = 14
-            TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-            TitleLabel.Font = Library.Scheme.Font
-            TitleLabel.Parent = Holder
-        end
-
-        if Data.Description then
-            DescriptionLabel = Instance.new("TextLabel")
-            DescriptionLabel.BackgroundTransparency = 1
-            DescriptionLabel.Size = UDim2.new(1, 0, 0, 0)
-            DescriptionLabel.Text = Data.Description
-            DescriptionLabel.TextColor3 = Library.Scheme.FontColor
-            DescriptionLabel.TextSize = 13
-            DescriptionLabel.TextWrapped = true
-            DescriptionLabel.TextXAlignment = Enum.TextXAlignment.Left
-            DescriptionLabel.TextYAlignment = Enum.TextYAlignment.Top
-            DescriptionLabel.Font = Library.Scheme.Font
-            DescriptionLabel.Parent = Holder
-
-            -- Resize based on text
-            local textBounds = TextService:GetTextBoundsAsync({
-                Text = Data.Description,
-                Font = Library.Scheme.Font,
-                Size = 13,
-                Width = 300 - 16
-            })
-            DescriptionLabel.Size = UDim2.new(1, 0, 0, textBounds.Y)
-        end
-
-        -- Resize function
-        local function ResizeNotification()
-            FakeBackground.Size = UDim2.fromOffset(300, UIListLayout.AbsoluteContentSize.Y + 20)
-            Library:UpdateDPI(FakeBackground, {Size = UDim2.fromOffset(300, UIListLayout.AbsoluteContentSize.Y + 20)})
-        end
-
-        local NotificationData = {
-            Title = Data.Title,
-            Description = Data.Description,
-            Time = Data.Time,
-            Destroyed = false,
-
-            Background = FakeBackground,
-            AnimatingBackground = Background,
-
-            Destroy = function(self)
-                if self.Destroyed then return end
-                self.Destroyed = true
-
-                -- Animate out
-                TweenService:Create(Background, TweenInfo.new(0.25), {
-                    Position = Library.NotifySide:lower() == "left" and UDim2.new(-1, -6, 0, -2) or UDim2.new(1, 6, 0, -2)
-                }):Play()
-
-                task.wait(0.25)
-                Library.Notifications[FakeBackground] = nil
-                FakeBackground:Destroy()
-            end
-        }
-
-        Library.Notifications[FakeBackground] = NotificationData
-
-        ResizeNotification()
-        FakeBackground.Visible = true
-
-        -- Animate in
-        TweenService:Create(Background, TweenInfo.new(0.25), {
-            Position = UDim2.fromOffset(-2, -2)
-        }):Play()
-
-        -- Auto destroy
-        task.spawn(function()
-            task.wait(Data.Time)
-            if not NotificationData.Destroyed then
-                NotificationData:Destroy()
-            end
-        end)
-
-        return NotificationData
-    end
-end
-
--- DPI scaling
-function Library:GetTextBounds(text, font, size, width)
-    local params = Instance.new("GetTextBoundsParams")
-    params.Text = text
-    params.Font = font or Library.Scheme.Font
-    params.Size = size * Library.DPIScale
-    params.Width = width or workspace.CurrentCamera.ViewportSize.X - 32
-
-    local bounds = TextService:GetTextBoundsAsync(params)
-    return bounds.X / Library.DPIScale, bounds.Y / Library.DPIScale
-end
-
-function Library:UpdateDPI(instance, properties)
-    if not Library.DPIRegistry then
-        Library.DPIRegistry = {}
-    end
-
-    for property, value in pairs(properties) do
-        if property == "TextSize" then
-            instance[property] = value * Library.DPIScale
-        end
-    end
-end
-
--- Create outline helper
-function Library:MakeOutline(frame, cornerRadius)
-    local outlineHolder = Instance.new("Frame")
-    outlineHolder.Name = "Outline"
-    outlineHolder.BackgroundColor3 = Color3.new(0, 0, 0)
-    outlineHolder.BackgroundTransparency = 1
-    outlineHolder.BorderSizePixel = 0
-    outlineHolder.Position = UDim2.fromOffset(-2, -2)
-    outlineHolder.Size = UDim2.new(1, 4, 1, 4)
-    outlineHolder.ZIndex = frame.ZIndex - 1
-    outlineHolder.Parent = frame
-
-    local outline = Instance.new("Frame")
-    outline.BackgroundColor3 = Library.Scheme.OutlineColor
-    outline.BorderSizePixel = 0
-    outline.Position = UDim2.fromOffset(1, 1)
-    outline.Size = UDim2.new(1, -2, 1, -2)
-    outline.Parent = outlineHolder
-
-    if cornerRadius and cornerRadius > 0 then
-        local corner1 = Instance.new("UICorner")
-        corner1.CornerRadius = UDim.new(0, cornerRadius + 1)
-        corner1.Parent = outlineHolder
-
-        local corner2 = Instance.new("UICorner")
-        corner2.CornerRadius = UDim.new(0, cornerRadius)
-        corner2.Parent = outline
-    end
-
-    return outlineHolder, outline
-end
-
--- Enhanced tooltip system
-Library.TooltipLabel = nil
-Library.CurrentHoverInstance = nil
-
-function Library:InitTooltip()
-    if Library.TooltipLabel then return end
-
-    Library.TooltipLabel = Instance.new("TextLabel")
-    Library.TooltipLabel.Name = "TooltipLabel"
-    Library.TooltipLabel.BackgroundColor3 = Library.Scheme.BackgroundColor
-    Library.TooltipLabel.BorderColor3 = Library.Scheme.OutlineColor
-    Library.TooltipLabel.BorderSizePixel = 1
-    Library.TooltipLabel.TextSize = 14
-    Library.TooltipLabel.TextWrapped = true
-    Library.TooltipLabel.Visible = false
-    Library.TooltipLabel.ZIndex = 10000
-    Library.TooltipLabel.Font = Library.Scheme.Font
-    Library.TooltipLabel.TextColor3 = Library.Scheme.FontColor
-    Library.TooltipLabel.Parent = game:GetService("CoreGui")
-
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 4)
-    UICorner.Parent = Library.TooltipLabel
-
-    local padding = Instance.new("UIPadding")
-    padding.PaddingLeft = UDim.new(0, 6)
-    padding.PaddingRight = UDim.new(0, 6)
-    padding.PaddingTop = UDim.new(0, 4)
-    padding.PaddingBottom = UDim.new(0, 4)
-    padding.Parent = Library.TooltipLabel
-end
-
-function Library:AddTooltip(infoStr, disabledInfoStr, hoverInstance)
-    Library:InitTooltip()
-
-    local TooltipTable = {
-        Disabled = false,
-        Hovering = false,
-        Signals = {},
-    }
-
-    local function DoHover()
-        if Library.CurrentHoverInstance == hoverInstance or (TooltipTable.Disabled and not disabledInfoStr) or (not TooltipTable.Disabled and not infoStr) then
-            return
-        end
-        Library.CurrentHoverInstance = hoverInstance
-
-        Library.TooltipLabel.Text = TooltipTable.Disabled and (disabledInfoStr or infoStr) or infoStr
-        Library.TooltipLabel.Visible = true
-
-        while TooltipTable.Hovering do
-            Library.TooltipLabel.Position = UDim2.fromOffset(mouse.X + 14, mouse.Y + 12)
-
-            -- Resize tooltip based on text
-            local textBounds = TextService:GetTextBoundsAsync({
-                Text = Library.TooltipLabel.Text,
-                Font = Library.Scheme.Font,
-                Size = 14,
-                Width = workspace.CurrentCamera.ViewportSize.X - Library.TooltipLabel.AbsolutePosition.X - 4
-            })
-            Library.TooltipLabel.Size = UDim2.fromOffset(textBounds.X + 12, textBounds.Y + 8)
-
-            RunService.RenderStepped:Wait()
-        end
-
-        Library.TooltipLabel.Visible = false
-        Library.CurrentHoverInstance = nil
-    end
-
-    local function GiveSignal(Connection)
-        local ConnectionType = typeof(Connection)
-        if Connection and (ConnectionType == "RBXScriptConnection" or ConnectionType == "RBXScriptSignal") then
-            table.insert(TooltipTable.Signals, Connection)
-        end
-        return Connection
-    end
-
-    GiveSignal(hoverInstance.MouseEnter:Connect(function()
-        TooltipTable.Hovering = true
-        DoHover()
-    end))
-
-    GiveSignal(hoverInstance.MouseMoved:Connect(DoHover))
-
-    GiveSignal(hoverInstance.MouseLeave:Connect(function()
-        if Library.CurrentHoverInstance ~= hoverInstance then
-            return
-        end
-        TooltipTable.Hovering = false
-        Library.TooltipLabel.Visible = false
-        Library.CurrentHoverInstance = nil
-    end))
-
-    function TooltipTable:Destroy()
-        for Index = #TooltipTable.Signals, 1, -1 do
-            local Connection = table.remove(TooltipTable.Signals, Index)
-            if Connection and Connection.Connected then
-                Connection:Disconnect()
-            end
-        end
-
-        if Library.CurrentHoverInstance == hoverInstance then
-            if Library.TooltipLabel then
-                Library.TooltipLabel.Visible = false
-            end
-            Library.CurrentHoverInstance = nil
-        end
-    end
-
-    return TooltipTable
-end
 
 elementHandler.__index = elementHandler
 windowHandler.__index = function(_, i) return rawget(windowHandler, i) or rawget(elementHandler, i) end
@@ -636,25 +209,1393 @@ local function trimString(text)
 end
 
 
+--! Aimbot Configuration
 
 local exploitEnv = getfenv and getfenv() or _G
+local isComputer = UserInputService.KeyboardEnabled and UserInputService.MouseEnabled
+local supportsMouseMove = exploitEnv and exploitEnv.mousemoverel and isComputer
+local supportsSilentAim = exploitEnv and exploitEnv.hookmetamethod and exploitEnv.newcclosure and exploitEnv.checkcaller and exploitEnv.getnamecallmethod
 
---! Enhanced Config Manager with Advanced Features
+local AimbotController = {}
+local aimbotConfig = {
+	enabled = false,
+	onePress = false,
+	aimKeyName = "RMB",
+	aimKey = Enum.UserInputType.MouseButton2,
+	aimMode = "Camera",
+	silentMethods = {},
+	silentChance = 100,
+	offAfterKill = false,
+	aimParts = {"Head", "HumanoidRootPart"},
+	aimPart = "HumanoidRootPart",
+	randomAimPart = false,
+	useOffset = false,
+	offsetType = "Static",
+	staticOffsetIncrement = 10,
+	dynamicOffsetIncrement = 10,
+	autoOffset = false,
+	maxAutoOffset = 50,
+	useSensitivity = false,
+	sensitivity = 50,
+	useNoise = false,
+	noiseFrequency = 50,
+	aliveCheck = false,
+	godCheck = false,
+	teamCheck = false,
+	friendCheck = false,
+	followCheck = false,
+	verifiedBadgeCheck = false,
+	wallCheck = false,
+	waterCheck = false,
+	foVCheck = false,
+	foVRadius = 100,
+	magnitudeCheck = false,
+	triggerMagnitude = 500,
+	transparencyCheck = false,
+	ignoredTransparency = 0.5,
+	whitelistedGroupCheck = false,
+	whitelistedGroup = 0,
+	blacklistedGroupCheck = false,
+	blacklistedGroup = 0,
+	ignoredPlayersCheck = false,
+	ignoredPlayers = {},
+	targetPlayersCheck = false,
+	targetPlayers = {},
+	randomSeed = os.clock()
+}
+
+local aimKeyAliases = {
+	RMB = Enum.UserInputType.MouseButton2,
+	LMB = Enum.UserInputType.MouseButton1,
+	MMB = Enum.UserInputType.MouseButton3
+}
+
+local aimbotState = {
+	aiming = false,
+	target = nil,
+	tween = nil,
+	lastRandomAimPartTick = 0,
+	savedSensitivity = UserInputService.MouseDeltaSensitivity,
+	robloxActive = true
+}
+
+local aimbotRandom = Random.new()
+
+local function resolveAimKey(keyName)
+	if typeof(keyName) == "EnumItem" then
+		return keyName
+	end
+	if typeof(keyName) == "string" then
+		local normalized = keyName:upper()
+		if aimKeyAliases[normalized] then
+			return aimKeyAliases[normalized]
+		end
+		if Enum.KeyCode[normalized] then
+			return Enum.KeyCode[normalized]
+		end
+	end
+	return nil
+end
+
+local function matchesAimKey(inputObj)
+	local keyEnum = aimbotConfig.aimKey
+	if not keyEnum or not inputObj then
+		return false
+	end
+	if keyEnum.EnumType == Enum.KeyCode then
+		return inputObj.KeyCode == keyEnum
+	end
+	return inputObj.UserInputType == keyEnum
+end
+
+local function setAimKey(keyName)
+	local resolved = resolveAimKey(keyName)
+	if resolved then
+		aimbotConfig.aimKeyName = typeof(keyName) == "string" and keyName or resolved.Name
+		aimbotConfig.aimKey = resolved
+		return true
+	end
+	return false
+end
+setAimKey(aimbotConfig.aimKeyName)
+
+local function clamp(number, minValue, maxValue)
+	return math.clamp(number, minValue, maxValue)
+end
+
+local function setAiming(state, preserveTarget)
+	state = not not state
+	if not state and aimbotState.tween then
+		aimbotState.tween:Cancel()
+		aimbotState.tween = nil
+	end
+	if not state then
+		aimbotState.aiming = false
+		if not preserveTarget then
+			aimbotState.target = nil
+		end
+		UserInputService.MouseDeltaSensitivity = aimbotState.savedSensitivity
+	else
+		aimbotState.aiming = true
+	end
+end
+
+local function setAimPart(partName)
+	if typeof(partName) ~= "string" then
+		return
+	end
+	if not table.find(aimbotConfig.aimParts, partName) then
+		table.insert(aimbotConfig.aimParts, partName)
+	end
+	aimbotConfig.aimPart = partName
+	aimbotState.target = nil
+end
+
+local function removeAimPart(partName)
+	local index = table.find(aimbotConfig.aimParts, partName)
+	if index then
+		table.remove(aimbotConfig.aimParts, index)
+		if aimbotConfig.aimPart == partName then
+			aimbotConfig.aimPart = aimbotConfig.aimParts[1]
+			aimbotState.target = nil
+		end
+	end
+end
+
+local function clearAimParts()
+	table.clear(aimbotConfig.aimParts)
+	aimbotConfig.aimPart = nil
+	aimbotState.target = nil
+end
+
+AimbotController.Config = aimbotConfig
+AimbotController.IsMouseModeAvailable = supportsMouseMove and true or false
+AimbotController.IsSilentModeAvailable = supportsSilentAim and true or false
+AimbotController.GetAimParts = function()
+	local parts = {}
+	for _, part in ipairs(aimbotConfig.aimParts) do
+		table.insert(parts, part)
+	end
+	return parts
+end
+AimbotController.SetEnabled = function(state)
+	state = not not state
+	if aimbotConfig.enabled == state then
+		return
+	end
+	aimbotConfig.enabled = state
+	if not state then
+		setAiming(false)
+	elseif not isComputer then
+		setAiming(true, true)
+	end
+end
+AimbotController.SetOnePress = function(state)
+	aimbotConfig.onePress = not not state
+end
+AimbotController.SetAimMode = function(mode)
+	if mode == "Camera" or mode == "Mouse" and supportsMouseMove or mode == "Silent" and supportsSilentAim then
+		aimbotConfig.aimMode = mode
+	end
+end
+AimbotController.SetAimKey = function(keyName)
+	return setAimKey(keyName)
+end
+AimbotController.SetOffAfterKill = function(state)
+	aimbotConfig.offAfterKill = not not state
+end
+AimbotController.SetRandomAimPart = function(state)
+	aimbotConfig.randomAimPart = not not state
+end
+AimbotController.SetSilentMethods = function(methodList)
+	local cleaned = {}
+	for _, method in ipairs(methodList or {}) do
+		if typeof(method) == "string" then
+			table.insert(cleaned, method)
+		end
+	end
+	aimbotConfig.silentMethods = cleaned
+end
+AimbotController.SetSilentChance = function(value)
+	aimbotConfig.silentChance = clamp(tonumber(value) or aimbotConfig.silentChance, 1, 100)
+end
+AimbotController.AddAimPart = function(partName)
+	if typeof(partName) ~= "string" or partName == "" then
+		return false
+	end
+	for _, existing in ipairs(aimbotConfig.aimParts) do
+		if existing:lower() == partName:lower() then
+			return false
+		end
+	end
+	table.insert(aimbotConfig.aimParts, partName)
+	if not aimbotConfig.aimPart then
+		aimbotConfig.aimPart = partName
+	end
+	return true
+end
+AimbotController.RemoveAimPart = removeAimPart
+AimbotController.ClearAimParts = function()
+	clearAimParts()
+end
+AimbotController.SetAimPart = function(partName)
+	setAimPart(partName)
+end
+AimbotController.SetUseOffset = function(state)
+	aimbotConfig.useOffset = not not state
+end
+AimbotController.SetOffsetType = function(value)
+	if value == "Static" or value == "Dynamic" or value == "Static & Dynamic" then
+		aimbotConfig.offsetType = value
+	end
+end
+AimbotController.SetStaticOffsetIncrement = function(value)
+	aimbotConfig.staticOffsetIncrement = clamp(tonumber(value) or 10, 1, 50)
+end
+AimbotController.SetDynamicOffsetIncrement = function(value)
+	aimbotConfig.dynamicOffsetIncrement = clamp(tonumber(value) or 10, 1, 50)
+end
+AimbotController.SetAutoOffset = function(state)
+	aimbotConfig.autoOffset = not not state
+end
+AimbotController.SetMaxAutoOffset = function(value)
+	aimbotConfig.maxAutoOffset = clamp(tonumber(value) or 50, 1, 50)
+end
+AimbotController.SetUseSensitivity = function(state)
+	aimbotConfig.useSensitivity = not not state
+end
+AimbotController.SetSensitivity = function(value)
+	aimbotConfig.sensitivity = clamp(tonumber(value) or 50, 1, 100)
+end
+AimbotController.SetUseNoise = function(state)
+	aimbotConfig.useNoise = not not state
+end
+AimbotController.SetNoiseFrequency = function(value)
+	aimbotConfig.noiseFrequency = clamp(tonumber(value) or 50, 1, 100)
+end
+AimbotController.Capabilities = {
+	mouse = supportsMouseMove,
+	silent = supportsSilentAim
+}
+
+local function calculateDirection(origin, position, magnitude)
+	if typeof(origin) ~= "Vector3" or typeof(position) ~= "Vector3" or typeof(magnitude) ~= "number" then
+		return Vector3.zero
+	end
+	if magnitude <= 0 then
+		return Vector3.zero
+	end
+	return (position - origin).Unit * magnitude
+end
+
+local function calculateChance(percentage)
+	if typeof(percentage) ~= "number" then
+		return false
+	end
+	local normalized = clamp(percentage, 1, 100) / 100
+	return aimbotRandom:NextNumber() <= normalized
+end
+
+local function nameInList(list, value)
+	if typeof(list) ~= "table" or typeof(value) ~= "string" then
+		return false
+	end
+	for _, entry in ipairs(list) do
+		if entry == value then
+			return true
+		end
+	end
+	return false
+end
+
+local function buildOffsetVector(humanoid, nativePart, targetPart)
+	if not aimbotConfig.useOffset or not humanoid or not targetPart or not nativePart then
+		return Vector3.zero
+	end
+	if aimbotConfig.autoOffset then
+		local distance = (targetPart.Position - nativePart.Position).Magnitude
+		local vertical = math.min(targetPart.Position.Y * aimbotConfig.staticOffsetIncrement * distance / 1000, aimbotConfig.maxAutoOffset)
+		return Vector3.new(0, vertical, 0) + humanoid.MoveDirection * (aimbotConfig.dynamicOffsetIncrement / 10)
+	end
+	local staticComponent = Vector3.new(0, targetPart.Position.Y * aimbotConfig.staticOffsetIncrement / 10, 0)
+	local dynamicComponent = humanoid.MoveDirection * (aimbotConfig.dynamicOffsetIncrement / 10)
+	if aimbotConfig.offsetType == "Static" then
+		return staticComponent
+	elseif aimbotConfig.offsetType == "Dynamic" then
+		return dynamicComponent
+	else
+		return staticComponent + dynamicComponent
+	end
+end
+
+local function getNoiseVector()
+	if not aimbotConfig.useNoise then
+		return Vector3.zero
+	end
+	local range = aimbotConfig.noiseFrequency / 100
+	return Vector3.new(
+		aimbotRandom:NextNumber(-range, range),
+		aimbotRandom:NextNumber(-range, range),
+		aimbotRandom:NextNumber(-range, range)
+	)
+end
+
+local function isTargetValid(character)
+	if not character then
+		return false
+	end
+	local aimPartName = aimbotConfig.aimPart
+	if not aimPartName then
+		return false
+	end
+	local humanoid = character:FindFirstChildWhichIsA("Humanoid")
+	local targetPart = character:FindFirstChild(aimPartName)
+	if not humanoid or not targetPart or not targetPart:IsA("BasePart") then
+		return false
+	end
+	local myCharacter = player.Character
+	local myPart = myCharacter and myCharacter:FindFirstChild(aimPartName)
+	if not myCharacter or not myPart or not myPart:IsA("BasePart") then
+		return false
+	end
+	local targetPlayer = Players:GetPlayerFromCharacter(character)
+	if not targetPlayer or targetPlayer == player then
+		return false
+	end
+	if aimbotConfig.aliveCheck and humanoid.Health <= 0 then
+		return false
+	end
+	if aimbotConfig.godCheck and (humanoid.Health >= 10 ^ 36 or character:FindFirstChildWhichIsA("ForceField")) then
+		return false
+	end
+	if aimbotConfig.teamCheck then
+		if player.Team and targetPlayer.Team and player.Team == targetPlayer.Team then
+			return false
+		end
+		if player.TeamColor and targetPlayer.TeamColor and player.TeamColor == targetPlayer.TeamColor then
+			return false
+		end
+	end
+	if aimbotConfig.friendCheck and targetPlayer:IsFriendsWith(player.UserId) then
+		return false
+	end
+	if aimbotConfig.followCheck and targetPlayer.FollowUserId == player.UserId then
+		return false
+	end
+	if aimbotConfig.verifiedBadgeCheck and targetPlayer.HasVerifiedBadge then
+		return false
+	end
+	if aimbotConfig.whitelistedGroupCheck and aimbotConfig.whitelistedGroup ~= 0 and targetPlayer:IsInGroup(aimbotConfig.whitelistedGroup) then
+		return false
+	end
+	if aimbotConfig.blacklistedGroupCheck and aimbotConfig.blacklistedGroup ~= 0 and not targetPlayer:IsInGroup(aimbotConfig.blacklistedGroup) then
+		return false
+	end
+	if aimbotConfig.ignoredPlayersCheck and nameInList(aimbotConfig.ignoredPlayers, targetPlayer.Name) then
+		return false
+	end
+	if aimbotConfig.targetPlayersCheck and not nameInList(aimbotConfig.targetPlayers, targetPlayer.Name) then
+		return false
+	end
+	if aimbotConfig.magnitudeCheck then
+		local difference = (targetPart.Position - myPart.Position).Magnitude
+		if difference > aimbotConfig.triggerMagnitude then
+			return false
+		end
+	end
+	if aimbotConfig.wallCheck then
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {myCharacter}
+		params.IgnoreWater = not aimbotConfig.waterCheck
+		local direction = calculateDirection(myPart.Position, targetPart.Position, (targetPart.Position - myPart.Position).Magnitude)
+		local result = workspace:Raycast(myPart.Position, direction, params)
+		if not result or not result.Instance or not result.Instance:FindFirstAncestor(targetPlayer.Name) then
+			return false
+		end
+	end
+	if aimbotConfig.transparencyCheck then
+		local head = character:FindFirstChild("Head")
+		if head and head:IsA("BasePart") and head.Transparency >= aimbotConfig.ignoredTransparency then
+			return false
+		end
+	end
+	local camera = workspace.CurrentCamera
+	if not camera then
+		return false
+	end
+	local offset = buildOffsetVector(humanoid, myPart, targetPart)
+	local noise = getNoiseVector()
+	local worldPosition = targetPart.Position + offset + noise
+	local viewportPosition, onScreen = camera:WorldToViewportPoint(worldPosition)
+	local orientation = CFrame.new(worldPosition) * CFrame.fromEulerAnglesYXZ(
+		math.rad(targetPart.Orientation.X),
+		math.rad(targetPart.Orientation.Y),
+		math.rad(targetPart.Orientation.Z)
+	)
+	return true, character, {Vector2.new(viewportPosition.X, viewportPosition.Y), onScreen}, worldPosition, (worldPosition - myPart.Position).Magnitude, orientation, targetPart
+end
+
+local function randomizeAimPart()
+	if not aimbotConfig.randomAimPart or #aimbotConfig.aimParts == 0 then
+		return
+	end
+	if os.clock() - aimbotState.lastRandomAimPartTick < 1 then
+		return
+	end
+	local index = aimbotRandom:NextInteger(1, #aimbotConfig.aimParts)
+	aimbotConfig.aimPart = aimbotConfig.aimParts[index]
+	aimbotState.lastRandomAimPartTick = os.clock()
+	aimbotState.target = nil
+end
+
+local function selectClosestTarget()
+	local closest = math.huge
+	local selected = nil
+	for _, other in ipairs(Players:GetPlayers()) do
+		if other ~= player then
+			local available, character, viewportInfo = isTargetValid(other.Character)
+			if available and viewportInfo[2] then
+				local magnitude = (Vector2.new(mouse.X, mouse.Y) - viewportInfo[1]).Magnitude
+				local radius = aimbotConfig.foVCheck and aimbotConfig.foVRadius or math.huge
+				if magnitude <= closest and magnitude <= radius then
+					closest = magnitude
+					selected = character
+				end
+			end
+		end
+	end
+	aimbotState.target = selected
+	return selected
+end
+
+local function updateTarget()
+	local ready, _, viewportInfo = isTargetValid(aimbotState.target)
+	if ready and viewportInfo[2] then
+		return true
+	end
+	if aimbotState.target and aimbotConfig.offAfterKill then
+		setAiming(false)
+		return false
+	end
+	return selectClosestTarget() ~= nil
+end
+
+local function silentAimPayload()
+	local ready, _, screen, worldPosition, magnitude, orientation, targetPart = isTargetValid(aimbotState.target)
+	if ready and screen and screen[2] then
+		return screen, worldPosition, magnitude, orientation, targetPart
+	end
+end
+
+UserInputService:GetPropertyChangedSignal("MouseDeltaSensitivity"):Connect(function()
+	if not aimbotState.aiming then
+		aimbotState.savedSensitivity = UserInputService.MouseDeltaSensitivity
+	end
+end)
+
+if isComputer then
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed or UserInputService:GetFocusedTextBox() then
+			return
+		end
+		if not aimbotConfig.enabled then
+			return
+		end
+		if matchesAimKey(input) then
+			if aimbotConfig.onePress then
+				if aimbotState.aiming then
+					setAiming(false)
+				else
+					setAiming(true, true)
+				end
+			else
+				setAiming(true, true)
+			end
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return
+		end
+		if not aimbotConfig.enabled then
+			return
+		end
+		if matchesAimKey(input) and not aimbotConfig.onePress then
+			setAiming(false)
+		end
+	end)
+
+	UserInputService.WindowFocused:Connect(function()
+		aimbotState.robloxActive = true
+	end)
+
+	UserInputService.WindowFocusReleased:Connect(function()
+		aimbotState.robloxActive = false
+	end)
+end
+
+local function runAimbotLoop()
+	if not workspace.CurrentCamera then
+		return
+	end
+	if not aimbotConfig.enabled then
+		if aimbotState.aiming then
+			setAiming(false)
+		end
+		return
+	end
+	randomizeAimPart()
+	if not aimbotState.aiming or not aimbotState.robloxActive then
+		return
+	end
+	if not updateTarget() then
+		return
+	end
+	local _, _, screenInfo, worldPosition = isTargetValid(aimbotState.target)
+	if not screenInfo then
+		return
+	end
+	if aimbotConfig.aimMode == "Mouse" and supportsMouseMove then
+		if screenInfo[2] then
+			local mouseLocation = UserInputService:GetMouseLocation()
+			local smoothing = aimbotConfig.useSensitivity and aimbotConfig.sensitivity / 5 or 10
+			exploitEnv.mousemoverel((screenInfo[1].X - mouseLocation.X) / smoothing, (screenInfo[1].Y - mouseLocation.Y) / smoothing)
+		else
+			aimbotState.target = nil
+		end
+	elseif aimbotConfig.aimMode == "Camera" then
+		UserInputService.MouseDeltaSensitivity = 0
+		if aimbotConfig.useSensitivity then
+			local tweenInfo = TweenInfo.new(clamp(aimbotConfig.sensitivity, 9, 99) / 100, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+			if aimbotState.tween then
+				aimbotState.tween:Cancel()
+			end
+			aimbotState.tween = TweenService:Create(workspace.CurrentCamera, tweenInfo, {CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, worldPosition)})
+			aimbotState.tween:Play()
+		else
+			workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, worldPosition)
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(runAimbotLoop)
+
+local validArguments = {
+	Raycast = {
+		Required = 3,
+		Arguments = {"Instance", "Vector3", "Vector3", "RaycastParams"}
+	},
+	FindPartOnRay = {
+		Required = 2,
+		Arguments = {"Instance", "Ray", "Instance", "boolean", "boolean"}
+	},
+	FindPartOnRayWithIgnoreList = {
+		Required = 3,
+		Arguments = {"Instance", "Ray", "table", "boolean", "boolean"}
+	},
+	FindPartOnRayWithWhitelist = {
+		Required = 3,
+		Arguments = {"Instance", "Ray", "table", "boolean"}
+	}
+}
+
+local function validateArguments(arguments, methodDescriptor)
+	if typeof(arguments) ~= "table" or typeof(methodDescriptor) ~= "table" or #arguments < methodDescriptor.Required then
+		return false
+	end
+	local matches = 0
+	for index, argument in ipairs(arguments) do
+		if typeof(argument) == methodDescriptor.Arguments[index] then
+			matches = matches + 1
+		end
+	end
+	return matches >= methodDescriptor.Required
+end
+
+if supportsSilentAim then
+	local oldIndex
+	oldIndex = exploitEnv.hookmetamethod(game, "__index", exploitEnv.newcclosure(function(self, index)
+		if not exploitEnv.checkcaller() and aimbotConfig.enabled and aimbotState.aiming and aimbotConfig.aimMode == "Silent" and table.find(aimbotConfig.silentMethods, "Mouse.Hit / Mouse.Target") and calculateChance(aimbotConfig.silentChance) and self == mouse then
+			local screenInfo, worldPosition, _, orientation, part = silentAimPayload()
+			if screenInfo then
+				if index == "Hit" or index == "hit" then
+					return orientation
+				elseif index == "Target" or index == "target" then
+					return part
+				elseif index == "X" or index == "x" then
+					return screenInfo[1].X
+				elseif index == "Y" or index == "y" then
+					return screenInfo[1].Y
+				elseif index == "UnitRay" or index == "unitRay" then
+					return Ray.new(self.Origin, (worldPosition - self.Origin).Unit)
+				end
+			end
+		end
+		return oldIndex(self, index)
+	end))
+
+	local oldNamecall
+	oldNamecall = exploitEnv.hookmetamethod(game, "__namecall", exploitEnv.newcclosure(function(...)
+		local method = exploitEnv.getnamecallmethod()
+		local arguments = {...}
+		local self = arguments[1]
+		if not exploitEnv.checkcaller() and aimbotConfig.enabled and aimbotState.aiming and aimbotConfig.aimMode == "Silent" and calculateChance(aimbotConfig.silentChance) then
+			local screenInfo, worldPosition, magnitude = silentAimPayload()
+			if screenInfo then
+				if table.find(aimbotConfig.silentMethods, "GetMouseLocation") and self == UserInputService and (method == "GetMouseLocation" or method == "getMouseLocation") then
+					return Vector2.new(screenInfo[1].X, screenInfo[1].Y)
+				elseif table.find(aimbotConfig.silentMethods, "Raycast") and self == workspace and (method == "Raycast" or method == "raycast") and validateArguments(arguments, validArguments.Raycast) then
+					arguments[3] = calculateDirection(arguments[2], worldPosition, magnitude)
+					return oldNamecall(table.unpack(arguments))
+				elseif table.find(aimbotConfig.silentMethods, "FindPartOnRay") and self == workspace and (method == "FindPartOnRay" or method == "findPartOnRay") and validateArguments(arguments, validArguments.FindPartOnRay) then
+					arguments[2] = Ray.new(arguments[2].Origin, calculateDirection(arguments[2].Origin, worldPosition, magnitude))
+					return oldNamecall(table.unpack(arguments))
+				elseif table.find(aimbotConfig.silentMethods, "FindPartOnRayWithIgnoreList") and self == workspace and (method == "FindPartOnRayWithIgnoreList" or method == "findPartOnRayWithIgnoreList") and validateArguments(arguments, validArguments.FindPartOnRayWithIgnoreList) then
+					arguments[2] = Ray.new(arguments[2].Origin, calculateDirection(arguments[2].Origin, worldPosition, magnitude))
+					return oldNamecall(table.unpack(arguments))
+				elseif table.find(aimbotConfig.silentMethods, "FindPartOnRayWithWhitelist") and self == workspace and (method == "FindPartOnRayWithWhitelist" or method == "findPartOnRayWithWhitelist") and validateArguments(arguments, validArguments.FindPartOnRayWithWhitelist) then
+					arguments[2] = Ray.new(arguments[2].Origin, calculateDirection(arguments[2].Origin, worldPosition, magnitude))
+					return oldNamecall(table.unpack(arguments))
+				end
+			end
+		end
+		return oldNamecall(...)
+	end))
+end
+
+
+
+local ESP_CONFIG_TEMPLATE = {
+    Global = {
+        MaxDistance = 2500,
+        Lerp = true,
+    },
+    Box = {
+        Properties = {On = false, Color = Color3.fromRGB(255, 255, 255), Transparency = 0.15},
+        Outline = {On = false, Color = Color3.fromRGB(0, 0, 0)},
+        Inline = {On = false, Color = Color3.fromRGB(255, 255, 255)},
+        InlineOutline = {On = false, Color = Color3.fromRGB(0, 0, 0)}
+    },
+    Text = {
+        Display = {
+            Properties = {On = false, Font = 'WindowsXPTahoma', Color = Color3.fromRGB(255, 255, 255), Size = 14},
+            Outline = {Color = Color3.fromRGB(0, 0, 0)}
+        },
+        Studs = {
+            Properties = {On = false, Font = 'WindowsXPTahoma', Color = Color3.fromRGB(255, 255, 255), Size = 12},
+            Outline = {Color = Color3.fromRGB(0, 0, 0)}
+        }
+    },
+    Chams = {
+        Properties = {
+            On = false,
+            Breath = false,
+            Color = {Fill = Color3.fromRGB(204, 46, 107), Outline = Color3.fromRGB(204, 46, 107)},
+            Transparency = {Fill = 0, Outline = 0}
+        }
+    },
+    Trail = {
+        Properties = {
+            On = false,
+            Color = ColorSequence.new{
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 58, 134)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+            },
+            Lifetime = 0.3
+        }
+    },
+    Skeleton = {
+        Properties = {On = false, Color = Color3.fromRGB(255, 255, 255)}
+    },
+    Tracer = {
+        Properties = {On = false, Color = Color3.fromRGB(255, 255, 255), Transparency = 0.2, Mode = 'From Screen'},
+        Outline = {On = false, Color = Color3.fromRGB(0, 0, 0)}
+    },
+    HealthBar = {
+        Properties = {On = false, Position = 'Right', Color = Color3.fromRGB(0, 255, 0)},
+        Outline = {Color = Color3.fromRGB(0, 0, 0)}
+    }
+}
+
+local function disableEspToggleDefaults(tbl)
+    if typeof(tbl) ~= "table" then
+        return
+    end
+    if tbl.On ~= nil then
+        tbl.On = false
+    end
+    for _, value in pairs(tbl) do
+        disableEspToggleDefaults(value)
+    end
+end
+
+local espDefaultConfig
+local espConfig
+local espEnabled = false
+local espFontOptions = {
+    'ProggyClean',
+    'ProggyTiny',
+    'Minecraftia',
+    'SmallestPixel7',
+    'Verdana',
+    'VerdanaBold',
+    'Tahoma',
+    'TahomaBold',
+    'CSGO',
+    'WindowsXPTahoma',
+    'Stratum2',
+    'Visitor'
+}
+
+local drawingSupported = pcall(function()
+    if Drawing then
+        local test = Drawing.new('Line')
+        test.Visible = false
+        test:Remove()
+        return true
+    end
+    return false
+end)
+
+local function newDrawing(kind)
+    if not drawingSupported then
+        return nil
+    end
+    local ok, object = pcall(Drawing.new, kind)
+    if not ok then
+        drawingSupported = false
+        warn('Drawing API unavailable:', object)
+        return nil
+    end
+    object.Visible = false
+    return object
+end
+
+local drawingFontMap = {
+    ProggyClean = Drawing and Drawing.Fonts and Drawing.Fonts.System,
+    ProggyTiny = Drawing and Drawing.Fonts and Drawing.Fonts.System,
+    Minecraftia = Drawing and Drawing.Fonts and Drawing.Fonts.Monospace,
+    SmallestPixel7 = Drawing and Drawing.Fonts and Drawing.Fonts.System,
+    Verdana = Drawing and Drawing.Fonts and Drawing.Fonts.UI,
+    VerdanaBold = Drawing and Drawing.Fonts and Drawing.Fonts.UI,
+    Tahoma = Drawing and Drawing.Fonts and Drawing.Fonts.UI,
+    TahomaBold = Drawing and Drawing.Fonts and Drawing.Fonts.UI,
+    CSGO = Drawing and Drawing.Fonts and Drawing.Fonts.UI,
+    WindowsXPTahoma = Drawing and Drawing.Fonts and Drawing.Fonts.UI,
+    Stratum2 = Drawing and Drawing.Fonts and Drawing.Fonts.Plex,
+    Visitor = Drawing and Drawing.Fonts and Drawing.Fonts.Monospace
+}
+
+local SimpleESP = {}
+SimpleESP.__index = SimpleESP
+
+local primitiveValueTypes = {
+    string = true,
+    number = true,
+    boolean = true
+}
+
+local function forEachDrawingObject(target, callback)
+    if not target or not callback then
+        return
+    end
+    if type(target) == "table" and not target.Remove then
+        for _, child in pairs(target) do
+            forEachDrawingObject(child, callback)
+        end
+        return
+    end
+    local valueType = typeof(target)
+    if primitiveValueTypes[valueType] then
+        return
+    end
+    callback(target)
+end
+
+function SimpleESP.new()
+    local self = setmetatable({}, SimpleESP)
+    self.players = {}
+    self.connections = {}
+    self.renderConnection = nil
+    self.config = nil
+    self.enabled = false
+    return self
+end
+
+function SimpleESP:applySettings(config)
+    self.config = deepCopy(config)
+    for _, data in pairs(self.players) do
+        self:configurePlayer(data)
+    end
+end
+
+function SimpleESP:start(config)
+    if self.enabled then
+        self:applySettings(config)
+        return
+    end
+    if not drawingSupported then
+        warn('KeyForge ESP requires the Drawing API which is not available in this environment.')
+    end
+    self.enabled = true
+    self:applySettings(config)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= player then
+            self:addPlayer(plr)
+        end
+    end
+    table.insert(self.connections, Players.PlayerAdded:Connect(function(plr)
+        if plr ~= player then
+            self:addPlayer(plr)
+        end
+    end))
+    table.insert(self.connections, Players.PlayerRemoving:Connect(function(plr)
+        self:removePlayer(plr)
+    end))
+    self.renderConnection = RunService.RenderStepped:Connect(function()
+        self:update()
+    end)
+end
+
+function SimpleESP:stop()
+    if not self.enabled then
+        return
+    end
+    self.enabled = false
+    if self.renderConnection then
+        self.renderConnection:Disconnect()
+        self.renderConnection = nil
+    end
+    for _, conn in ipairs(self.connections) do
+        conn:Disconnect()
+    end
+    table.clear(self.connections)
+    for _, data in pairs(self.players) do
+        self:destroyPlayerData(data)
+    end
+    self.players = {}
+end
+
+function SimpleESP:addPlayer(plr)
+    local data = {player = plr}
+    self.players[plr] = data
+    data.charAdded = plr.CharacterAdded:Connect(function(char)
+        self:handleCharacter(data, char)
+    end)
+    data.charRemoving = plr.CharacterRemoving:Connect(function()
+        self:handleCharacter(data, nil)
+    end)
+    if plr.Character then
+        self:handleCharacter(data, plr.Character)
+    end
+end
+
+function SimpleESP:removePlayer(plr)
+    local data = self.players[plr]
+    if not data then
+        return
+    end
+    self:destroyPlayerData(data)
+    self.players[plr] = nil
+end
+
+function SimpleESP:destroyPlayerData(data)
+    if data.charAdded then data.charAdded:Disconnect() end
+    if data.charRemoving then data.charRemoving:Disconnect() end
+    if data.drawings then
+        forEachDrawingObject(data.drawings, function(drawingObject)
+            pcall(function()
+                drawingObject:Remove()
+            end)
+        end)
+        data.drawings = nil
+    end
+    if data.highlight then
+        data.highlight:Destroy()
+    end
+    if data.trail then
+        data.trail.trail:Destroy()
+        data.trail.attachment0:Destroy()
+        data.trail.attachment1:Destroy()
+    end
+end
+
+function SimpleESP:handleCharacter(data, character)
+    data.character = character
+    if not data.drawings then
+        data.drawings = self:createDrawingSet()
+        self:configurePlayer(data)
+    end
+    if data.highlight then
+        data.highlight:Destroy()
+        data.highlight = nil
+    end
+    if data.trail then
+        data.trail.trail:Destroy()
+        data.trail.attachment0:Destroy()
+        data.trail.attachment1:Destroy()
+        data.trail = nil
+    end
+    if not character then
+        self:setDrawingVisibility(data, false)
+        return
+    end
+    if character and self.config.Chams.Properties.On then
+        data.highlight = self:createHighlight(character)
+    end
+    if character and self.config.Trail.Properties.On then
+        data.trail = self:createTrail(character)
+    end
+end
+
+function SimpleESP:createHighlight(character)
+    local highlight = Instance.new('Highlight')
+    highlight.FillColor = self.config.Chams.Properties.Color.Fill
+    highlight.OutlineColor = self.config.Chams.Properties.Color.Outline
+    highlight.FillTransparency = self.config.Chams.Properties.Transparency.Fill
+    highlight.OutlineTransparency = self.config.Chams.Properties.Transparency.Outline
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = character
+    return highlight
+end
+
+function SimpleESP:createTrail(character)
+    local hrp = character:FindFirstChild('HumanoidRootPart')
+    if not hrp then
+        return nil
+    end
+    local a0 = Instance.new('Attachment')
+    a0.Name = 'KeyForgeTrailAttachment0'
+    a0.Parent = hrp
+    local a1 = Instance.new('Attachment')
+    a1.Name = 'KeyForgeTrailAttachment1'
+    a1.Parent = hrp
+    a1.Position = Vector3.new(0, -2, 0)
+    local trail = Instance.new('Trail')
+    trail.Attachment0 = a0
+    trail.Attachment1 = a1
+    trail.LightEmission = 1
+    trail.Color = self.config.Trail.Properties.Color
+    trail.Lifetime = self.config.Trail.Properties.Lifetime
+    trail.Parent = character
+    return {trail = trail, attachment0 = a0, attachment1 = a1}
+end
+
+function SimpleESP:createDrawingSet()
+    local drawings = {
+        box = newDrawing('Quad'),
+        outline = newDrawing('Quad'),
+        inline = newDrawing('Quad'),
+        inlineOutline = newDrawing('Quad'),
+        tracer = newDrawing('Line'),
+        name = newDrawing('Text'),
+        distance = newDrawing('Text'),
+        health = {
+            fill = newDrawing('Square'),
+            outline = newDrawing('Square')
+        },
+        skeleton = {}
+    }
+    local skeletonPairs = {
+        {'Head', 'UpperTorso'},
+        {'UpperTorso', 'LowerTorso'},
+        {'LowerTorso', 'LeftUpperLeg'},
+        {'LowerTorso', 'RightUpperLeg'},
+        {'LeftUpperLeg', 'LeftLowerLeg'},
+        {'RightUpperLeg', 'RightLowerLeg'},
+        {'LeftLowerLeg', 'LeftFoot'},
+        {'RightLowerLeg', 'RightFoot'},
+        {'UpperTorso', 'LeftUpperArm'},
+        {'UpperTorso', 'RightUpperArm'},
+        {'LeftUpperArm', 'LeftLowerArm'},
+        {'RightUpperArm', 'RightLowerArm'},
+        {'LeftLowerArm', 'LeftHand'},
+        {'RightLowerArm', 'RightHand'}
+    }
+    for _, pair in ipairs(skeletonPairs) do
+        table.insert(drawings.skeleton, {parts = pair, line = newDrawing('Line')})
+    end
+    if drawings.name then
+        drawings.name.Center = true
+        drawings.name.Size = 14
+    end
+    if drawings.distance then
+        drawings.distance.Center = true
+        drawings.distance.Size = 13
+    end
+    if drawings.tracer then
+        drawings.tracer.Thickness = 1
+    end
+    return drawings
+end
+
+function SimpleESP:configurePlayer(data)
+    if not data.drawings then
+        return
+    end
+    local cfg = self.config
+    local box = data.drawings.box
+    if box then
+        box.Filled = true
+        box.Color = cfg.Box.Properties.Color
+        box.Transparency = 1 - (cfg.Box.Properties.Transparency or 0)
+    end
+    local outline = data.drawings.outline
+    if outline then
+        outline.Filled = false
+        outline.Color = cfg.Box.Outline.Color
+        outline.Thickness = 1
+    end
+    local inline = data.drawings.inline
+    if inline then
+        inline.Filled = false
+        inline.Color = cfg.Box.Inline.Color
+        inline.Thickness = 1
+    end
+    local inlineOutline = data.drawings.inlineOutline
+    if inlineOutline then
+        inlineOutline.Filled = false
+        inlineOutline.Color = cfg.Box.InlineOutline.Color
+        inlineOutline.Thickness = 1
+    end
+    if data.drawings.name then
+        data.drawings.name.Color = cfg.Text.Display.Properties.Color
+        data.drawings.name.Size = cfg.Text.Display.Properties.Size
+        data.drawings.name.Font = drawingFontMap[cfg.Text.Display.Properties.Font] or Drawing.Fonts.UI
+    end
+    if data.drawings.distance then
+        data.drawings.distance.Color = cfg.Text.Studs.Properties.Color
+        data.drawings.distance.Size = cfg.Text.Studs.Properties.Size
+        data.drawings.distance.Font = drawingFontMap[cfg.Text.Studs.Properties.Font] or Drawing.Fonts.UI
+    end
+    if data.drawings.health and data.drawings.health.fill then
+        data.drawings.health.fill.Color = cfg.HealthBar.Properties.Color
+        data.drawings.health.outline.Color = cfg.HealthBar.Outline.Color
+    end
+    if data.trail and data.trail.trail then
+        data.trail.trail.Color = cfg.Trail.Properties.Color
+        data.trail.trail.Lifetime = cfg.Trail.Properties.Lifetime
+    end
+    if data.highlight then
+        data.highlight.FillColor = cfg.Chams.Properties.Color.Fill
+        data.highlight.OutlineColor = cfg.Chams.Properties.Color.Outline
+        data.highlight.FillTransparency = cfg.Chams.Properties.Transparency.Fill
+        data.highlight.OutlineTransparency = cfg.Chams.Properties.Transparency.Outline
+    end
+end
+
+local function shrinkRect(rect, amount)
+    return rect.left + amount, rect.top + amount, rect.right - amount, rect.bottom - amount
+end
+
+function SimpleESP:update()
+    if not self.enabled then
+        return
+    end
+    local cam = workspace.CurrentCamera
+    if not cam then
+        return
+    end
+    local viewport = cam.ViewportSize
+    for _, data in pairs(self.players) do
+        self:updatePlayerDrawings(data, cam, viewport)
+    end
+end
+
+function SimpleESP:updatePlayerDrawings(data, cam, viewport)
+    local character = data.character
+    local cfg = self.config
+    local hrp = character and character:FindFirstChild('HumanoidRootPart')
+    local humanoid = character and character:FindFirstChildOfClass('Humanoid')
+    local valid = character and hrp and humanoid
+    local targetDistance
+    if valid then
+        targetDistance = (hrp.Position - cam.CFrame.Position).Magnitude
+        if targetDistance > cfg.Global.MaxDistance then
+            valid = false
+        end
+    end
+    if not valid then
+        self:setDrawingVisibility(data, false)
+        return
+    end
+    local cf, size = character:GetBoundingBox()
+    local corners = {
+        cf * Vector3.new(-size.X/2, -size.Y/2, -size.Z/2),
+        cf * Vector3.new(-size.X/2, size.Y/2, -size.Z/2),
+        cf * Vector3.new(size.X/2, size.Y/2, -size.Z/2),
+        cf * Vector3.new(size.X/2, -size.Y/2, -size.Z/2),
+        cf * Vector3.new(-size.X/2, -size.Y/2, size.Z/2),
+        cf * Vector3.new(-size.X/2, size.Y/2, size.Z/2),
+        cf * Vector3.new(size.X/2, size.Y/2, size.Z/2),
+        cf * Vector3.new(size.X/2, -size.Y/2, size.Z/2)
+    }
+    local minX, maxX = math.huge, -math.huge
+    local minY, maxY = math.huge, -math.huge
+    local anyVisible = false
+    for _, corner in ipairs(corners) do
+        local screenPos, onScreen = cam:WorldToViewportPoint(corner)
+        if onScreen then
+            anyVisible = true
+            minX = math.min(minX, screenPos.X)
+            maxX = math.max(maxX, screenPos.X)
+            minY = math.min(minY, screenPos.Y)
+            maxY = math.max(maxY, screenPos.Y)
+        end
+    end
+    if not anyVisible then
+        self:setDrawingVisibility(data, false)
+        return
+    end
+    local rect = {left = minX, right = maxX, top = minY, bottom = maxY}
+    self:updateBoxesForRect(data, rect)
+    self:updateTexts(data, rect, targetDistance)
+    self:updateHealthBar(data, rect, humanoid)
+    self:updateTracer(data, rect, viewport)
+    self:updateSkeletonLines(data, cam)
+    if data.highlight then
+        data.highlight.Enabled = cfg.Chams.Properties.On
+    end
+    if data.trail and data.trail.trail then
+        data.trail.trail.Enabled = cfg.Trail.Properties.On
+    end
+end
+
+function SimpleESP:setDrawingVisibility(data, state)
+    if not data.drawings then
+        return
+    end
+    local visibleState = state
+    if visibleState == nil then
+        visibleState = false
+    end
+    forEachDrawingObject(data.drawings, function(drawingObject)
+        pcall(function()
+            if drawingObject.Visible ~= nil then
+                drawingObject.Visible = visibleState
+            end
+        end)
+    end)
+end
+
+function SimpleESP:updateBoxesForRect(data, rect)
+    local cfg = self.config
+    local box = data.drawings.box
+    local outline = data.drawings.outline
+    local inline = data.drawings.inline
+    local inlineOutline = data.drawings.inlineOutline
+    if box then
+        box.Visible = cfg.Box.Properties.On
+        if box.Visible then
+            box.PointA = Vector2.new(rect.left, rect.top)
+            box.PointB = Vector2.new(rect.right, rect.top)
+            box.PointC = Vector2.new(rect.right, rect.bottom)
+            box.PointD = Vector2.new(rect.left, rect.bottom)
+        end
+    end
+    if outline then
+        outline.Visible = cfg.Box.Outline.On
+        if outline.Visible then
+            outline.PointA = Vector2.new(rect.left, rect.top)
+            outline.PointB = Vector2.new(rect.right, rect.top)
+            outline.PointC = Vector2.new(rect.right, rect.bottom)
+            outline.PointD = Vector2.new(rect.left, rect.bottom)
+        end
+    end
+    if inline then
+        inline.Visible = cfg.Box.Inline.On
+        if inline.Visible then
+            local l, t, r, b = shrinkRect(rect, 1)
+            inline.PointA = Vector2.new(l, t)
+            inline.PointB = Vector2.new(r, t)
+            inline.PointC = Vector2.new(r, b)
+            inline.PointD = Vector2.new(l, b)
+        end
+    end
+    if inlineOutline then
+        inlineOutline.Visible = cfg.Box.InlineOutline.On
+        if inlineOutline.Visible then
+            local l, t, r, b = shrinkRect(rect, 2)
+            inlineOutline.PointA = Vector2.new(l, t)
+            inlineOutline.PointB = Vector2.new(r, t)
+            inlineOutline.PointC = Vector2.new(r, b)
+            inlineOutline.PointD = Vector2.new(l, b)
+        end
+    end
+end
+
+function SimpleESP:updateTexts(data, rect, distance)
+    local cfg = self.config
+    if data.drawings.name then
+        data.drawings.name.Visible = cfg.Text.Display.Properties.On
+        if data.drawings.name.Visible then
+            data.drawings.name.Text = data.player.DisplayName or data.player.Name
+            data.drawings.name.Position = Vector2.new((rect.left + rect.right) / 2, rect.top - 16)
+        end
+    end
+    if data.drawings.distance then
+        data.drawings.distance.Visible = cfg.Text.Studs.Properties.On
+        if data.drawings.distance.Visible then
+            data.drawings.distance.Text = string.format('%dm', math.floor(distance or 0))
+            data.drawings.distance.Position = Vector2.new((rect.left + rect.right) / 2, rect.bottom + 2)
+        end
+    end
+end
+
+function SimpleESP:updateHealthBar(data, rect, humanoid)
+    local cfg = self.config
+    if not data.drawings.health then
+        return
+    end
+    local outline = data.drawings.health.outline
+    local fill = data.drawings.health.fill
+    local enabled = cfg.HealthBar.Properties.On and humanoid and humanoid.MaxHealth > 0
+    if outline then outline.Visible = enabled end
+    if fill then fill.Visible = enabled end
+    if not enabled then
+        return
+    end
+    local width = 3
+    local offset = cfg.HealthBar.Properties.Position == 'Left' and - (width + 2) or 2
+    local x = cfg.HealthBar.Properties.Position == 'Left' and rect.left + offset - width or rect.right + offset
+    local y = rect.top
+    local height = rect.bottom - rect.top
+    if outline then
+        outline.Position = Vector2.new(x, y)
+        outline.Size = Vector2.new(width, height)
+        outline.Filled = false
+        outline.Thickness = 1
+    end
+    if fill then
+        fill.Position = Vector2.new(x, y + height * (1 - math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)))
+        fill.Size = Vector2.new(width, height * math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1))
+        fill.Filled = true
+    end
+end
+
+function SimpleESP:updateTracer(data, rect, viewport)
+    local cfg = self.config
+    local tracer = data.drawings.tracer
+    if not tracer then
+        return
+    end
+    tracer.Visible = cfg.Tracer.Properties.On
+    if not tracer.Visible then
+        return
+    end
+    tracer.Color = cfg.Tracer.Properties.Color
+    tracer.Transparency = 1 - cfg.Tracer.Properties.Transparency
+    tracer.From = Vector2.new(viewport.X / 2, viewport.Y)
+    tracer.To = Vector2.new((rect.left + rect.right) / 2, rect.bottom)
+end
+
+function SimpleESP:updateSkeletonLines(data, cam)
+    local cfg = self.config
+    if not data.drawings.skeleton then
+        return
+    end
+    local show = cfg.Skeleton.Properties.On
+    for _, segment in ipairs(data.drawings.skeleton) do
+        local line = segment.line
+        if line then
+            line.Visible = false
+        end
+    end
+    if not show or not data.character then
+        return
+    end
+    for _, segment in ipairs(data.drawings.skeleton) do
+        local line = segment.line
+        local partA = data.character:FindFirstChild(segment.parts[1])
+        local partB = data.character:FindFirstChild(segment.parts[2])
+        if partA and partB and line then
+            local a, aVisible = cam:WorldToViewportPoint(partA.Position)
+            local b, bVisible = cam:WorldToViewportPoint(partB.Position)
+            if aVisible and bVisible then
+                line.Visible = true
+                line.Color = cfg.Skeleton.Properties.Color
+                line.From = Vector2.new(a.X, a.Y)
+                line.To = Vector2.new(b.X, b.Y)
+            else
+                line.Visible = false
+            end
+        elseif line then
+            line.Visible = false
+        end
+    end
+end
+
+local simpleEspController = SimpleESP.new()
+
+local function ensureEspDefaults()
+    if espDefaultConfig then
+        return
+    end
+    espDefaultConfig = deepCopy(ESP_CONFIG_TEMPLATE)
+    disableEspToggleDefaults(espDefaultConfig)
+    espConfig = deepCopy(espDefaultConfig)
+end
+
+local function cleanupEsp()
+    simpleEspController:stop()
+end
+
+local function startEsp()
+    cleanupEsp()
+    if not espEnabled then
+        return
+    end
+    ensureEspDefaults()
+    simpleEspController:start(espConfig)
+end
+
+local function scheduleEspReload()
+    if not espEnabled then
+        return
+    end
+    simpleEspController:applySettings(espConfig)
+end
+
+local function setEspEnabled(state)
+    ensureEspDefaults()
+    if espEnabled == state then
+        if state then
+            scheduleEspReload()
+        end
+        return
+    end
+    espEnabled = state
+    if espEnabled then
+        startEsp()
+    else
+        cleanupEsp()
+    end
+end
+
+local function updateEspConfig(path, value, opts)
+    ensureEspDefaults()
+    setByPath(espConfig, path, value)
+    scheduleEspReload()
+end
+
+local function getEspConfigValue(path)
+    ensureEspDefaults()
+    return getByPath(espConfig, path)
+end
+
+local function resetEspConfig()
+	ensureEspDefaults()
+	espConfig = deepCopy(espDefaultConfig)
+	scheduleEspReload()
+end
+
+--! Config Manager
 
 local ConfigManager = {}
 local CONFIG_FOLDER = "KeyForgeConfigs"
 local CONFIG_EXTENSION = ".json"
-local DEFAULT_CONFIG_NAME = "default"
-
--- Advanced config features
-local ConfigFeatures = {
-    AutoSave = true,
-    AutoSaveInterval = 30, -- seconds
-    BackupConfigs = true,
-    MaxBackups = 5,
-    EncryptionEnabled = false,
-    ConfigVersion = "1.0"
-}
 
 local function filesystemAvailable()
 	return exploitEnv and exploitEnv.isfolder and exploitEnv.makefolder and exploitEnv.writefile and exploitEnv.readfile and exploitEnv.listfiles and exploitEnv.isfile and exploitEnv.delfile
@@ -727,28 +1668,77 @@ local function deserializeValue(value)
 	return result
 end
 
-local runtimeConfigData = {}
-
-local function exportRuntimeConfig()
-	return deepCopy(runtimeConfigData)
+local function exportAimbotSnapshot()
+	local snapshot = deepCopy(aimbotConfig)
+	if snapshot then
+		snapshot.aimKey = nil
+	end
+	return snapshot
 end
 
-local function applyRuntimeConfig(snapshot)
+local function exportEspSnapshot()
+	ensureEspDefaults()
+	return deepCopy(espConfig)
+end
+
+local aimbotSetterMap = {
+	enabled = function(value) AimbotController.SetEnabled(value) end,
+	onePress = function(value) AimbotController.SetOnePress(value) end,
+	aimMode = function(value) AimbotController.SetAimMode(value) end,
+	aimKeyName = function(value) AimbotController.SetAimKey(value) end,
+	offAfterKill = function(value) AimbotController.SetOffAfterKill(value) end,
+	randomAimPart = function(value) AimbotController.SetRandomAimPart(value) end,
+	useOffset = function(value) AimbotController.SetUseOffset(value) end,
+	offsetType = function(value) AimbotController.SetOffsetType(value) end,
+	staticOffsetIncrement = function(value) AimbotController.SetStaticOffsetIncrement(value) end,
+	dynamicOffsetIncrement = function(value) AimbotController.SetDynamicOffsetIncrement(value) end,
+	autoOffset = function(value) AimbotController.SetAutoOffset(value) end,
+	maxAutoOffset = function(value) AimbotController.SetMaxAutoOffset(value) end,
+	useSensitivity = function(value) AimbotController.SetUseSensitivity(value) end,
+	sensitivity = function(value) AimbotController.SetSensitivity(value) end,
+	useNoise = function(value) AimbotController.SetUseNoise(value) end,
+	noiseFrequency = function(value) AimbotController.SetNoiseFrequency(value) end,
+	silentChance = function(value) AimbotController.SetSilentChance(value) end,
+	silentMethods = function(value) AimbotController.SetSilentMethods(value) end
+}
+
+local function applyAimbotSnapshot(snapshot)
 	if typeof(snapshot) ~= "table" then
 		return
 	end
-	runtimeConfigData = deepCopy(snapshot)
+	if typeof(snapshot.aimParts) == "table" then
+		aimbotConfig.aimParts = {}
+		for _, partName in ipairs(snapshot.aimParts) do
+			if typeof(partName) == "string" then
+				table.insert(aimbotConfig.aimParts, partName)
+			end
+		end
+	end
+	if typeof(snapshot.aimPart) == "string" then
+		AimbotController.SetAimPart(snapshot.aimPart)
+	end
+	for key, value in pairs(snapshot) do
+		if key ~= "aimParts" and key ~= "aimPart" then
+			local handler = aimbotSetterMap[key]
+			if handler then
+				handler(value)
+			elseif typeof(value) == "table" then
+				aimbotConfig[key] = deepCopy(value)
+			elseif aimbotConfig[key] ~= nil then
+				aimbotConfig[key] = value
+			end
+		end
+	end
+	aimbotState.target = nil
 end
 
-function ConfigManager:GetRuntimeConfig()
-	return deepCopy(runtimeConfigData)
-end
-
-function ConfigManager:SetRuntimeConfig(data)
-	if typeof(data) ~= "table" then
+local function applyEspSnapshot(snapshot)
+	if typeof(snapshot) ~= "table" then
 		return
 	end
-	runtimeConfigData = deepCopy(data)
+	ensureEspDefaults()
+	espConfig = deepCopy(snapshot)
+	scheduleEspReload()
 end
 
 function ConfigManager:IsReady()
@@ -788,12 +1778,9 @@ function ConfigManager:Save(name)
 		return false, "Unable to create config folder"
 	end
 	local payload = {
-		data = exportRuntimeConfig(),
-		metadata = {
-			version = ConfigFeatures.ConfigVersion,
-			created = os.time(),
-			name = sanitized
-		}
+		aimbot = exportAimbotSnapshot(),
+		esp = exportEspSnapshot(),
+		espEnabled = espEnabled
 	}
 	local encodedPayload = HttpService:JSONEncode(serializeValue(payload))
 	exploitEnv.writefile(getConfigPath(sanitized), encodedPayload)
@@ -823,10 +1810,14 @@ function ConfigManager:Load(name)
 		return false, "Invalid config data"
 	end
 	local data = deserializeValue(decoded)
-	if typeof(data.data) == "table" then
-		applyRuntimeConfig(data.data)
-	else
-		applyRuntimeConfig({})
+	if data.aimbot then
+		applyAimbotSnapshot(data.aimbot)
+	end
+	if data.esp then
+		applyEspSnapshot(data.esp)
+	end
+	if data.espEnabled ~= nil then
+		setEspEnabled(data.espEnabled)
 	end
 	return true, sanitized
 end
@@ -1010,8 +2001,626 @@ local function getSequenceColor(sequence)
 	return Color3.fromRGB(255, 255, 255)
 end
 
+local function buildMainTab(tab)
+	if not tab then
+		return
+	end
+	local config = AimbotController.Config
+	local capabilities = AimbotController.Capabilities
 
+	local function updateAimParts(dropdown, selected)
+		if not dropdown then
+			return
+		end
+		local parts = AimbotController.GetAimParts()
+		if #parts == 0 then
+			dropdown:ClearOptions()
+			return
+		end
+		dropdown:SetOptions(parts, selected or config.aimPart, function(value)
+			AimbotController.SetAimPart(value)
+		end)
+	end
 
+	local mainSection = tab:Section("Aimbot")
+	mainSection:Toggle("Enable Aimbot", config.enabled, function(state)
+		AimbotController.SetEnabled(state)
+	end)
+
+	if isComputer then
+		mainSection:Toggle("One-Press Mode", config.onePress, function(state)
+			AimbotController.SetOnePress(state)
+		end)
+
+		local aimKeyLabel = mainSection:Label(string.format("Current Aim Key: %s", config.aimKeyName or "RMB"))
+		mainSection:TextBox("Aim Key (press Enter to apply)", function(value)
+			value = trimString(value)
+			if #value == 0 then
+				return
+			end
+			if AimbotController.SetAimKey(value) then
+				aimKeyLabel:ChangeText(string.format("Current Aim Key: %s", config.aimKeyName))
+			else
+				aimKeyLabel:ChangeText("Invalid key. Examples: RMB, Q, LeftShift")
+				task.delay(2, function()
+					aimKeyLabel:ChangeText(string.format("Current Aim Key: %s", config.aimKeyName or "RMB"))
+				end)
+			end
+		end)
+	else
+		mainSection:Label("Mobile mode uses the toggle above to aim.")
+	end
+
+	local aimModes = {"Camera"}
+	if capabilities.mouse then
+		table.insert(aimModes, "Mouse")
+	else
+		mainSection:Label("Mouse aiming is unavailable in this executor.")
+	end
+	if capabilities.silent then
+		table.insert(aimModes, "Silent")
+	else
+		mainSection:Label("Silent Aim is unavailable in this executor.")
+	end
+	local defaultMode = config.aimMode
+	if not table.find(aimModes, defaultMode) then
+		defaultMode = "Camera"
+	end
+	mainSection:Dropdown("Aim Mode", aimModes, defaultMode, function(value)
+		AimbotController.SetAimMode(value)
+	end)
+
+	mainSection:Toggle("Off After Kill", config.offAfterKill, function(state)
+		AimbotController.SetOffAfterKill(state)
+	end)
+
+	local silentSection
+	if capabilities.silent then
+		silentSection = tab:Section("Silent Aim")
+		silentSection:Label("Select the hooks you want Silent Aim to override.")
+		local chanceSlider = silentSection:Slider("Silent Aim Chance (%)", function(value)
+			AimbotController.SetSilentChance(value)
+		end, 100, 1)
+		task.defer(function()
+			chanceSlider:Set(config.silentChance, true)
+		end)
+		local silentOptions = {
+			{name = "Mouse.Hit / Mouse.Target", label = "Mouse.Hit / Mouse.Target"},
+			{name = "GetMouseLocation", label = "GetMouseLocation"},
+			{name = "Raycast", label = "workspace:Raycast"},
+			{name = "FindPartOnRay", label = "workspace:FindPartOnRay"},
+			{name = "FindPartOnRayWithIgnoreList", label = "FindPartOnRayWithIgnoreList"},
+			{name = "FindPartOnRayWithWhitelist", label = "FindPartOnRayWithWhitelist"}
+		}
+
+		local function updateSilentMethods(method, state)
+			local active = {}
+			for _, existing in ipairs(config.silentMethods) do
+				active[existing] = true
+			end
+			if state then
+				active[method] = true
+			else
+				active[method] = nil
+			end
+			local newList = {}
+			for methodName in pairs(active) do
+				table.insert(newList, methodName)
+			end
+			table.sort(newList)
+			AimbotController.SetSilentMethods(newList)
+		end
+
+		for _, entry in ipairs(silentOptions) do
+			local enabled = table.find(config.silentMethods, entry.name) ~= nil
+			silentSection:Toggle(entry.label, enabled, function(state)
+				updateSilentMethods(entry.name, state)
+			end)
+		end
+	end
+
+	local partSection = tab:Section("Aim Parts")
+	local aimPartDropdown = partSection:Dropdown("Aim Part", AimbotController.GetAimParts(), config.aimPart or "", function(value)
+		AimbotController.SetAimPart(value)
+	end)
+	updateAimParts(aimPartDropdown, config.aimPart)
+
+	partSection:Toggle("Random Aim Part", config.randomAimPart, function(state)
+		AimbotController.SetRandomAimPart(state)
+	end)
+
+	partSection:TextBox("Add Aim Part", function(text)
+		text = trimString(text)
+		if #text == 0 then
+			return
+		end
+		if AimbotController.AddAimPart(text) then
+			updateAimParts(aimPartDropdown, text)
+		end
+	end)
+
+	partSection:TextBox("Remove Aim Part", function(text)
+		text = trimString(text)
+		if #text == 0 then
+			return
+		end
+		AimbotController.RemoveAimPart(text)
+		updateAimParts(aimPartDropdown, config.aimPart)
+	end)
+
+	partSection:Button("Clear All Items", function()
+		AimbotController.ClearAimParts()
+		aimPartDropdown:ClearOptions()
+	end)
+
+	local offsetSection = tab:Section("Aim Offset")
+	offsetSection:Toggle("Use Offset", config.useOffset, function(state)
+		AimbotController.SetUseOffset(state)
+	end)
+
+	local offsetTypes = {"Static", "Dynamic", "Static & Dynamic"}
+	offsetSection:Dropdown("Offset Type", offsetTypes, config.offsetType, function(value)
+		AimbotController.SetOffsetType(value)
+	end)
+
+	local staticSlider = offsetSection:Slider("Static Offset Increment", function(value)
+		AimbotController.SetStaticOffsetIncrement(value)
+	end, 50, 1)
+	task.defer(function()
+		staticSlider:Set(config.staticOffsetIncrement, true)
+	end)
+
+	local dynamicSlider = offsetSection:Slider("Dynamic Offset Increment", function(value)
+		AimbotController.SetDynamicOffsetIncrement(value)
+	end, 50, 1)
+	task.defer(function()
+		dynamicSlider:Set(config.dynamicOffsetIncrement, true)
+	end)
+
+	offsetSection:Toggle("Auto Offset", config.autoOffset, function(state)
+		AimbotController.SetAutoOffset(state)
+	end)
+
+	local autoSlider = offsetSection:Slider("Max Auto Offset", function(value)
+		AimbotController.SetMaxAutoOffset(value)
+	end, 50, 1)
+	task.defer(function()
+		autoSlider:Set(config.maxAutoOffset, true)
+	end)
+
+	local sensitivitySection = tab:Section("Sensitivity & Noise")
+	sensitivitySection:Toggle("Use Sensitivity", config.useSensitivity, function(state)
+		AimbotController.SetUseSensitivity(state)
+	end)
+
+	local sensitivitySlider = sensitivitySection:Slider("Sensitivity", function(value)
+		AimbotController.SetSensitivity(value)
+	end, 100, 1)
+	task.defer(function()
+		sensitivitySlider:Set(config.sensitivity, true)
+	end)
+
+	sensitivitySection:Toggle("Use Noise", config.useNoise, function(state)
+		AimbotController.SetUseNoise(state)
+	end)
+
+	local noiseSlider = sensitivitySection:Slider("Noise Frequency", function(value)
+		AimbotController.SetNoiseFrequency(value)
+	end, 100, 1)
+	task.defer(function()
+		noiseSlider:Set(config.noiseFrequency, true)
+	end)
+end
+
+local function buildMiscTab(tab)
+	if not tab then
+		return
+	end
+	local miscSection = tab:Section("Utilities")
+	miscSection:Label("On-demand helpers for frequently used scripts.", 13)
+	miscSection:Button("Infinite Yield", function()
+		local ok, err = pcall(function()
+			loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+		end)
+		if not ok then
+			warn("Infinite Yield failed:", err)
+		end
+	end)
+end
+
+local function buildConfigTab(tab)
+	if not tab then
+		return
+	end
+	local actionsSection = tab:Section("Config Actions")
+	if not ConfigManager:IsReady() then
+		actionsSection:Label("Filesystem functions unavailable. Config saving is disabled.", 13)
+		return
+	end
+	actionsSection:Label("Type a config name, then use the buttons below to create, load, or delete profiles.", 13)
+	local nameInput = actionsSection:TextBox("Config Name", function() end)
+	local statusLabel = actionsSection:Label("Status: Ready", 13)
+
+	local listSection = tab:Section("Saved Configs")
+	local searchBar = listSection:SearchBar("Search configs")
+
+	local configEntries = {}
+	local selectedEntry = nil
+	local selectedName = ""
+
+	local function setStatus(text)
+		if statusLabel and statusLabel.ChangeText then
+			statusLabel:ChangeText("Status: " .. text)
+		end
+	end
+
+	local function getInputText()
+		return nameInput and nameInput.Instance and nameInput.Instance.BoxBackground and nameInput.Instance.BoxBackground.InnerBox and nameInput.Instance.BoxBackground.InnerBox.TextBoxText and nameInput.Instance.BoxBackground.InnerBox.TextBoxText.Text or ""
+	end
+
+	local function setInputText(text)
+		if nameInput and nameInput.Instance and nameInput.Instance.BoxBackground and nameInput.Instance.BoxBackground.InnerBox and nameInput.Instance.BoxBackground.InnerBox.TextBoxText then
+			nameInput.Instance.BoxBackground.InnerBox.TextBoxText.Text = text or ""
+		end
+	end
+
+	local function deselectEntry()
+		if selectedEntry and selectedEntry.Instance and selectedEntry.Instance.ButtonText then
+			selectedEntry.Instance.ButtonText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		end
+		selectedEntry = nil
+	end
+
+	local function selectEntry(name, entryObject)
+		if selectedEntry ~= entryObject then
+			deselectEntry()
+		end
+		selectedEntry = entryObject
+		selectedName = name
+		setInputText(name)
+		if entryObject and entryObject.Instance and entryObject.Instance.ButtonText then
+			entryObject.Instance.ButtonText.TextColor3 = Color3.fromRGB(0, 255, 106)
+		end
+	end
+
+	local function clearConfigEntries()
+		for _, entry in ipairs(configEntries) do
+			if entry.Remove then
+				entry:Remove()
+			elseif entry.Instance then
+				entry.Instance:Destroy()
+			end
+		end
+		table.clear(configEntries)
+	end
+
+	local function refreshConfigEntries(preselectName)
+		clearConfigEntries()
+		local configs = ConfigManager:GetConfigs()
+		if #configs == 0 then
+			local emptyLabel = searchBar:Label("No configs saved yet.", 13)
+			table.insert(configEntries, emptyLabel)
+			deselectEntry()
+			return
+		end
+		for _, configName in ipairs(configs) do
+			local entryButton
+			entryButton = searchBar:Button(configName, function()
+				selectEntry(configName, entryButton)
+				setStatus("Selected '" .. configName .. "'")
+			end)
+			table.insert(configEntries, entryButton)
+			if preselectName and configName == preselectName then
+				selectEntry(configName, entryButton)
+			end
+		end
+	end
+
+	local function resolveConfigName()
+		local typed = trimString(getInputText())
+		if typed == "" then
+			return selectedName or ""
+		end
+		return typed
+	end
+
+	actionsSection:Button("Create / Save", function()
+		local name = resolveConfigName()
+		if name == "" then
+			setStatus("Enter a valid config name.")
+			return
+		end
+		local success, message = ConfigManager:Save(name)
+		if success then
+			setStatus("Saved '" .. message .. "'")
+			setInputText(message)
+			refreshConfigEntries(message)
+		else
+			setStatus(message or "Save failed")
+		end
+	end)
+
+	actionsSection:Button("Load", function()
+		local name = resolveConfigName()
+		if name == "" then
+			setStatus("Select or enter a config name.")
+			return
+		end
+		local success, message = ConfigManager:Load(name)
+		if success then
+			setStatus("Loaded '" .. message .. "'")
+			setInputText(message)
+			refreshConfigEntries(message)
+		else
+			setStatus(message or "Load failed")
+		end
+	end)
+
+	actionsSection:Button("Delete", function()
+		local name = resolveConfigName()
+		if name == "" then
+			setStatus("Select or enter a config name.")
+			return
+		end
+		local success, message = ConfigManager:Delete(name)
+		if success then
+			setStatus("Deleted '" .. message .. "'")
+			if selectedName == message then
+				selectedName = ""
+				deselectEntry()
+			end
+			setInputText("")
+			refreshConfigEntries()
+		else
+			setStatus(message or "Delete failed")
+		end
+	end)
+
+	refreshConfigEntries()
+end
+
+local function buildEspTab(tab)
+	if not tab then
+		return
+	end
+	ensureEspDefaults()
+	local suppressApply = true
+
+	local function current(path)
+		return getEspConfigValue(path)
+	end
+
+	local function apply(path, value, opts)
+		if suppressApply then
+			setByPath(espConfig, path, value)
+		else
+			updateEspConfig(path, value, opts)
+		end
+	end
+
+	local function shallowCopy(tbl)
+		local clone = {}
+		for k, v in pairs(tbl or {}) do
+			clone[k] = v
+		end
+		return clone
+	end
+
+	local function uniformSequence(color)
+		return ColorSequence.new({
+			ColorSequenceKeypoint.new(0, color),
+			ColorSequenceKeypoint.new(1, color)
+		})
+	end
+
+	local globalSection = tab:Section("Global")
+	globalSection:Toggle("Enable ESP", espEnabled, function(state)
+		if suppressApply then
+			espEnabled = state
+		else
+			setEspEnabled(state)
+		end
+	end)
+
+	local maxDistanceValue = current({"Global", "MaxDistance"})
+	local distanceIsInfinite = maxDistanceValue == math.huge
+	local lastCustomDistance = distanceIsInfinite and 2500 or maxDistanceValue or 2500
+
+	local distanceSlider = globalSection:Slider("Max Distance", function(value)
+		lastCustomDistance = math.round(value)
+		if not distanceIsInfinite then
+			apply({"Global", "MaxDistance"}, lastCustomDistance, {immediate = true})
+		end
+	end, 10000, 100)
+	local distanceSliderRef = distanceSlider
+	task.defer(function()
+		distanceSliderRef:Set(lastCustomDistance, true)
+	end)
+
+	globalSection:Toggle("Infinite Distance", distanceIsInfinite, function(state)
+		distanceIsInfinite = state
+		if state then
+			apply({"Global", "MaxDistance"}, math.huge, {immediate = true})
+		else
+			apply({"Global", "MaxDistance"}, lastCustomDistance, {immediate = true})
+		end
+	end)
+
+	globalSection:Toggle("Dynamic Health Colors", current({"Global", "Lerp"}) ~= false, function(state)
+		apply({"Global", "Lerp"}, state, {immediate = true})
+	end)
+
+	local boxSection = tab:Section("Boxes")
+	boxSection:Toggle("Boxes Enabled", current({"Box", "Properties", "On"}) ~= false, function(state)
+		apply({"Box", "Properties", "On"}, state, {immediate = true})
+	end)
+
+	local boxModes = {"2D", "2D Corner"}
+	local boxModeDropdown = boxSection:Dropdown("Box Mode", boxModes, function(value)
+		apply({"Box", "Properties", "Mode"}, value, {immediate = true})
+	end)
+	boxModeDropdown:SetOptions(boxModes, current({"Box", "Properties", "Mode"}) or "2D", function(value)
+		apply({"Box", "Properties", "Mode"}, value, {immediate = true})
+	end)
+
+	local boxTypes = {"Quad", "Square"}
+	local boxTypeDropdown = boxSection:Dropdown("Box Type", boxTypes, function(value)
+		apply({"Box", "Properties", "Type"}, value, {immediate = true})
+	end)
+	boxTypeDropdown:SetOptions(boxTypes, current({"Box", "Properties", "Type"}) or "Quad", function(value)
+		apply({"Box", "Properties", "Type"}, value, {immediate = true})
+	end)
+
+	local boxTransparency = boxSection:Slider("Box Transparency (%)", function(value)
+		apply({"Box", "Properties", "Transparency"}, math.clamp(value, 0, 100) / 100, {immediate = true})
+	end, 100, 0)
+	local boxTransparencyRef = boxTransparency
+	task.defer(function()
+		boxTransparencyRef:Set(math.round((current({"Box", "Properties", "Transparency"}) or 0) * 100), true)
+	end)
+
+	boxSection:ColorWheel("Box Color", current({"Box", "Properties", "Color"}), function(color)
+		apply({"Box", "Properties", "Color"}, color, {immediate = true})
+	end)
+	boxSection:ColorWheel("Outline Color", current({"Box", "Outline", "Color"}), function(color)
+		apply({"Box", "Outline", "Color"}, color, {immediate = true})
+	end)
+	boxSection:ColorWheel("Inline Color", current({"Box", "Inline", "Color"}), function(color)
+		apply({"Box", "Inline", "Color"}, color, {immediate = true})
+	end)
+	boxSection:ColorWheel("Inline Outline Color", current({"Box", "InlineOutline", "Color"}), function(color)
+		apply({"Box", "InlineOutline", "Color"}, color, {immediate = true})
+	end)
+
+	boxSection:Toggle("Outline Enabled", current({"Box", "Outline", "On"}) ~= false, function(state)
+		apply({"Box", "Outline", "On"}, state, {immediate = true})
+	end)
+	boxSection:Toggle("Inline Enabled", current({"Box", "Inline", "On"}) ~= false, function(state)
+		apply({"Box", "Inline", "On"}, state, {immediate = true})
+	end)
+	boxSection:Toggle("Inline Outline Enabled", current({"Box", "InlineOutline", "On"}) ~= false, function(state)
+		apply({"Box", "InlineOutline", "On"}, state, {immediate = true})
+	end)
+
+	local textSection = tab:Section("Text")
+	local textEntries = {
+		{label = "Name", key = "Display"},
+		{label = "Distance", key = "Studs"}
+	}
+	for _, entry in ipairs(textEntries) do
+		local basePath = {"Text", entry.key}
+		textSection:Toggle(entry.label .. " Text", current({basePath[1], basePath[2], "Properties", "On"}) ~= false, function(state)
+			apply({basePath[1], basePath[2], "Properties", "On"}, state)
+		end)
+		local fontDropdown = textSection:Dropdown(entry.label .. " Font", espFontOptions, function(fontName)
+			apply({basePath[1], basePath[2], "Properties", "Font"}, fontName)
+		end)
+		fontDropdown:SetOptions(espFontOptions, current({basePath[1], basePath[2], "Properties", "Font"}) or espFontOptions[1], function(fontName)
+			apply({basePath[1], basePath[2], "Properties", "Font"}, fontName)
+		end)
+		local sizeSlider = textSection:Slider(entry.label .. " Size", function(value)
+			apply({basePath[1], basePath[2], "Properties", "Size"}, math.round(value))
+		end, 32, 8)
+		local sizeSliderRef = sizeSlider
+		task.defer(function()
+			sizeSliderRef:Set(current({basePath[1], basePath[2], "Properties", "Size"}) or 12, true)
+		end)
+		textSection:ColorWheel(entry.label .. " Color", current({basePath[1], basePath[2], "Properties", "Color"}), function(color)
+			apply({basePath[1], basePath[2], "Properties", "Color"}, color, {immediate = true})
+		end)
+		textSection:ColorWheel(entry.label .. " Outline", current({basePath[1], basePath[2], "Outline", "Color"}), function(color)
+			apply({basePath[1], basePath[2], "Outline", "Color"}, color, {immediate = true})
+		end)
+	end
+
+	local function setTableEntry(path, key, value, opts)
+		local existing = shallowCopy(current(path))
+		existing[key] = value
+		apply(path, existing, opts)
+	end
+
+	local visualsSection = tab:Section("Visuals")
+	visualsSection:Toggle("Chams Enabled", current({"Chams", "Properties", "On"}) ~= false, function(state)
+		apply({"Chams", "Properties", "On"}, state, {immediate = true})
+	end)
+	visualsSection:Toggle("Chams Breath", current({"Chams", "Properties", "Breath"}) ~= false, function(state)
+		apply({"Chams", "Properties", "Breath"}, state)
+	end)
+	visualsSection:ColorWheel("Chams Fill", current({"Chams", "Properties", "Color", "Fill"}), function(color)
+		setTableEntry({"Chams", "Properties", "Color"}, "Fill", color, {immediate = true})
+	end)
+	visualsSection:ColorWheel("Chams Outline", current({"Chams", "Properties", "Color", "Outline"}), function(color)
+		setTableEntry({"Chams", "Properties", "Color"}, "Outline", color, {immediate = true})
+	end)
+	local chamsFillTransparency = visualsSection:Slider("Chams Fill Transparency", function(value)
+		setTableEntry({"Chams", "Properties", "Transparency"}, "Fill", math.clamp(value, 0, 100), {immediate = true})
+	end, 100, 0)
+	local chamsFillTransparencyRef = chamsFillTransparency
+	task.defer(function()
+		chamsFillTransparencyRef:Set(current({"Chams", "Properties", "Transparency", "Fill"}) or 0, true)
+	end)
+	local chamsOutlineTransparency = visualsSection:Slider("Chams Outline Transparency", function(value)
+		setTableEntry({"Chams", "Properties", "Transparency"}, "Outline", math.clamp(value, 0, 100), {immediate = true})
+	end, 100, 0)
+	local chamsOutlineTransparencyRef = chamsOutlineTransparency
+	task.defer(function()
+		chamsOutlineTransparencyRef:Set(current({"Chams", "Properties", "Transparency", "Outline"}) or 0, true)
+	end)
+
+	visualsSection:Toggle("Trail Enabled", current({"Trail", "Properties", "On"}) ~= false, function(state)
+		apply({"Trail", "Properties", "On"}, state)
+	end)
+	visualsSection:ColorWheel("Trail Color", getSequenceColor(current({"Trail", "Properties", "Color"})), function(color)
+		apply({"Trail", "Properties", "Color"}, uniformSequence(color), {immediate = true})
+	end)
+	local trailLifetime = visualsSection:Slider("Trail Lifetime (x0.1s)", function(value)
+		apply({"Trail", "Properties", "Lifetime"}, math.max(0.1, value / 10), {immediate = true})
+	end, 50, 1)
+	local trailLifetimeRef = trailLifetime
+	task.defer(function()
+		trailLifetimeRef:Set(math.round((current({"Trail", "Properties", "Lifetime"}) or 0.1) * 10), true)
+	end)
+
+	local indicatorsSection = tab:Section("Indicators")
+	indicatorsSection:Toggle("Skeleton Enabled", current({"Skeleton", "Properties", "On"}) ~= false, function(state)
+		apply({"Skeleton", "Properties", "On"}, state)
+	end)
+	indicatorsSection:ColorWheel("Skeleton Color", current({"Skeleton", "Properties", "Color"}), function(color)
+		apply({"Skeleton", "Properties", "Color"}, color, {immediate = true})
+	end)
+
+	local tracerModes = {"From Screen", "From Mouse", "From Client", "Over Head"}
+	local tracerDropdown = indicatorsSection:Dropdown("Tracer Mode", tracerModes, function(value)
+		apply({"Tracer", "Properties", "Mode"}, value, {immediate = true})
+	end)
+	tracerDropdown:SetOptions(tracerModes, current({"Tracer", "Properties", "Mode"}) or tracerModes[1], function(value)
+		apply({"Tracer", "Properties", "Mode"}, value, {immediate = true})
+	end)
+	indicatorsSection:Toggle("Tracers Enabled", current({"Tracer", "Properties", "On"}) ~= false, function(state)
+		apply({"Tracer", "Properties", "On"}, state, {immediate = true})
+	end)
+	indicatorsSection:ColorWheel("Tracer Color", current({"Tracer", "Properties", "Color"}), function(color)
+		apply({"Tracer", "Properties", "Color"}, color, {immediate = true})
+	end)
+	indicatorsSection:Toggle("Tracer Outline", current({"Tracer", "Outline", "On"}) ~= false, function(state)
+		apply({"Tracer", "Outline", "On"}, state, {immediate = true})
+	end)
+	indicatorsSection:ColorWheel("Tracer Outline Color", current({"Tracer", "Outline", "Color"}), function(color)
+		apply({"Tracer", "Outline", "Color"}, color, {immediate = true})
+	end)
+
+	indicatorsSection:Toggle("Health Bar", current({"HealthBar", "Properties", "On"}) ~= false, function(state)
+		apply({"HealthBar", "Properties", "On"}, state)
+	end)
+	indicatorsSection:ColorWheel("Health Bar Color", current({"HealthBar", "Properties", "Color"}), function(color)
+		apply({"HealthBar", "Properties", "Color"}, color, {immediate = true})
+	end)
+
+	suppressApply = false
+	if espEnabled then
+		setEspEnabled(true)
+	end
+end
 
 local function createOriginialElements()
 	local function createWindow()
@@ -2854,7 +4463,7 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
 		updateWindowPos()
 
 		inputEndedConnection = UserInputService.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
 				mouseMovedConnection:Disconnect()
 				inputEndedConnection:Disconnect()
 			end
@@ -2928,23 +4537,6 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
 
 	visibilityKeybind = getMatchingKeyCodeFromName(visibilityKeybind) or Enum.KeyCode.RightControl
 
-	local appliedWidth = width
-	local appliedHeight = height
-	if not appliedWidth then
-		if isMobileClient then
-			appliedWidth = math.clamp(math.floor(viewPortSize.X - 32), 360, 580)
-		else
-			appliedWidth = background.AbsoluteSize.X
-		end
-	end
-	if not appliedHeight then
-		if isMobileClient then
-			appliedHeight = math.clamp(math.floor(viewPortSize.Y - 140), 320, 420)
-		else
-			appliedHeight = background.AbsoluteSize.Y
-		end
-	end
-
 	window.Type = "Window"
 	window.Instance = windowInstance
 	window.GuiToRemove = windowInstance
@@ -2973,6 +4565,24 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
 
 	heading.Title.Text = windowName or "KeyForge"
 	windowInstance.Parent = game:GetService("CoreGui") -- Change to core later on and add detection bypass
+
+	local appliedWidth = width
+	local appliedHeight = height
+	if not appliedWidth then
+		if isMobileClient then
+			appliedWidth = math.clamp(math.floor(viewPortSize.X - 32), 360, 580)
+		else
+			appliedWidth = background.AbsoluteSize.X
+		end
+	end
+	if not appliedHeight then
+		if isMobileClient then
+			appliedHeight = math.clamp(math.floor(viewPortSize.Y - 140), 320, 420)
+		else
+			appliedHeight = background.AbsoluteSize.Y
+		end
+	end
+
 	local targetWidth = appliedWidth
 	local targetHeight = appliedHeight
 	if isMobileClient then
@@ -2991,16 +4601,15 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
 	heading.Size = UDim2.new(1,0,0,heading.AbsoluteSize.Y)
 	buttonHolder.Size = UDim2.new(0,buttonHolder.ButtonHolderList.AbsoluteContentSize.X + buttonHolder.ButtonHolderPadding.PaddingRight.Offset,.9,0)
 	heading.Title.Size = UDim2.new(1,-(buttonHolder.ButtonHolderList.AbsoluteContentSize.X + buttonHolder.ButtonHolderPadding.PaddingRight.Offset + 4),.9,0)
+	minimizedLongBarOriginialSize = Vector2.new(heading.AbsoluteSize.X, heading.AbsoluteSize.Y)
+	minimizedShortBarOriginialSize = Vector2.new(heading.AbsoluteSize.X / 6 * 2, heading.AbsoluteSize.Y)
+	originialWindowSize = background.AbsoluteSize
 	
 	if isMobileClient then
 		holder.Tabs.Size = UDim2.new(0.3, 0, 1, -20)
 		holder.Tabs.ScrollBarThickness = 4
 		heading.Title.TextSize = 13
 	end
-
-	minimizedLongBarOriginialSize = Vector2.new(heading.AbsoluteSize.X, heading.AbsoluteSize.Y)
-	minimizedShortBarOriginialSize = Vector2.new(heading.AbsoluteSize.X / 6 * 2, heading.AbsoluteSize.Y)
-	originialWindowSize = background.AbsoluteSize
 	
 	return window
 end
@@ -4354,419 +5963,35 @@ function elementHandler:ColorWheel(colorWheelName: string, defaultColor, callbac
 	return colorWheel
 end
 
-createOriginalElements()
+createOriginialElements()
 
--- Theme and Config Integration
-local ThemeManager = {} do
-    local ThemeFields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor" }
-    ThemeManager.Folder = "KeyForgeSettings"
-    ThemeManager.SubFolder = ""
-    ThemeManager.Library = Library
-
-    ThemeManager.BuiltInThemes = {
-        ["Default"] = {
-            1,
-            { FontColor = "a8a8a8", MainColor = "1f1f1f", AccentColor = "00aaff", BackgroundColor = "151515", OutlineColor = "252533" },
-        },
-        ["Light"] = {
-            2,
-            { FontColor = "000000", MainColor = "ffffff", AccentColor = "ffaa00", BackgroundColor = "f5f5f5", OutlineColor = "cccccc" },
-        },
-        ["Dark"] = {
-            3,
-            { FontColor = "ffffff", MainColor = "000000", AccentColor = "ff0000", BackgroundColor = "1a1a1a", OutlineColor = "333333" },
+-- Autorun bootstrap to create default window and tabs
+if not _G.__KF_NO_AUTORUN then
+    local ok, err = pcall(function()
+        local win = Library.new("KeyForge", true, 650, 450, "RightControl")
+        local defaultTabs = {
+            {name = "Main", icon = "rbxassetid://6022668911"},
+            {name = "Esp", icon = "rbxassetid://6031763426"},
+            {name = "Misc", icon = "rbxassetid://6034848752"},
+            {name = "Config", icon = "rbxassetid://6031215982"}
         }
-    }
-
-    function ThemeManager:BuildFolderTree()
-        local paths = { self.Folder .. "/themes" }
-        for _, path in paths do
-            if not exploitEnv.isfolder(path) then
-                exploitEnv.makefolder(path)
-            end
-        end
-    end
-
-    function ThemeManager:SetFolder(folder)
-        self.Folder = folder
-        self:BuildFolderTree()
-    end
-
-    function ThemeManager:ApplyTheme(theme)
-        local customThemeData = self:GetCustomTheme(theme)
-        local data = customThemeData or self.BuiltInThemes[theme]
-
-        if not data then
-            return
-        end
-
-        local scheme = data[2]
-        for idx, val in pairs(customThemeData or scheme) do
-            if idx == "VideoLink" then
-                continue
-            elseif idx == "FontFace" then
-                self.Library:SetFont(Enum.Font[val])
-
-                if self.Library.Options[idx] then
-                    self.Library.Options[idx]:SetValue(val)
-                end
-            else
-                self.Library.Scheme[idx] = Color3.fromHex(val)
-
-                if self.Library.Options[idx] then
-                    self.Library.Options[idx]:SetValueRGB(Color3.fromHex(val))
-                end
-            end
-        end
-
-        self:ThemeUpdate()
-    end
-
-    function ThemeManager:ThemeUpdate()
-        self.Library.UpdateColorsUsingRegistry()
-    end
-
-    function ThemeManager:GetCustomTheme(file)
-        local path = self.Folder .. "/themes/" .. file .. ".json"
-        if not exploitEnv.isfile(path) then
-            return nil
-        end
-
-        local data = exploitEnv.readfile(path)
-        local success, decoded = pcall(HttpService.JSONDecode, HttpService, data)
-
-        if not success then
-            return nil
-        end
-
-        return decoded
-    end
-
-    ThemeManager:BuildFolderTree()
-end
-
-local SaveManager = {} do
-    SaveManager.Folder = "KeyForgeSettings"
-    SaveManager.SubFolder = ""
-    SaveManager.Library = Library
-
-    function SaveManager:BuildFolderTree()
-        local paths = { self.Folder .. "/settings", self.Folder .. "/settings/configs" }
-        for _, path in paths do
-            if not exploitEnv.isfolder(path) then
-                exploitEnv.makefolder(path)
-            end
-        end
-    end
-
-    function SaveManager:SetFolder(folder)
-        self.Folder = folder
-        self:BuildFolderTree()
-    end
-
-    function SaveManager:Save(name)
-        self:CheckFolderTree()
-        local fullPath = self.Folder .. "/settings/" .. name .. ".json"
-        if SaveManager:CheckSubFolder(true) then
-            fullPath = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
-        end
-
-        local data = { objects = {} }
-
-        for idx, toggle in pairs(self.Library.Toggles) do
-            if not toggle.Type then continue end
-            table.insert(data.objects, {
-                type = "Toggle",
-                idx = idx,
-                value = toggle.Enabled or false
-            })
-        end
-
-        for idx, option in pairs(self.Library.Options) do
-            if not option.Type then continue end
-            if option.Type == "Slider" then
-                table.insert(data.objects, {
-                    type = "Slider",
-                    idx = idx,
-                    value = tostring(option.Value or 0)
-                })
-            elseif option.Type == "Dropdown" then
-                table.insert(data.objects, {
-                    type = "Dropdown",
-                    idx = idx,
-                    value = option.Value or ""
-                })
-            elseif option.Type == "ColorPicker" then
-                table.insert(data.objects, {
-                    type = "ColorPicker",
-                    idx = idx,
-                    value = (option.Value or Color3.new()):ToHex(),
-                    transparency = option.Transparency or 0
-                })
-            elseif option.Type == "Toggle" then
-                table.insert(data.objects, {
-                    type = "Toggle",
-                    idx = idx,
-                    value = option.Value or false
-                })
-            elseif option.Type == "Input" then
-                table.insert(data.objects, {
-                    type = "Input",
-                    idx = idx,
-                    text = option.Value or ""
-                })
-            end
-        end
-
-        local success, encoded = pcall(HttpService.JSONEncode, HttpService, data)
-        if success then
-            exploitEnv.writefile(fullPath, encoded)
-            return true
-        end
-        return false, "Encoding failed"
-    end
-
-    function SaveManager:Load(name)
-        self:CheckFolderTree()
-        local file = self.Folder .. "/settings/" .. name .. ".json"
-        if SaveManager:CheckSubFolder(true) then
-            file = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
-        end
-
-        if not exploitEnv.isfile(file) then return false, "File not found" end
-
-        local success, decoded = pcall(HttpService.JSONDecode, HttpService, exploitEnv.readfile(file))
-        if not success then return false, "Decode error" end
-
-        for _, option in pairs(decoded.objects) do
-            if option.type == "Toggle" and self.Library.Toggles[option.idx] then
-                self.Library.Toggles[option.idx]:Set(option.value, function() end)
-            elseif option.type == "Slider" and self.Library.Options[option.idx] then
-                self.Library.Options[option.idx]:SetValue(platform.number(option.value) or 0, true)
-            elseif option.type == "Dropdown" and self.Library.Options[option.idx] then
-                self.Library.Options[option.idx]:SetValue(option.value, true)
-            elseif option.type == "ColorPicker" and self.Library.Options[option.idx] then
-                self.Library.Options[option.idx]:SetValueRGB(Color3.fromHex(option.value), true)
-            elseif option.type == "Input" and self.Library.Options[idx] then
-                self.Library.Options[option.idx]:SetValue(option.text, true)
-            end
-        end
-
-        return true
-    end
-
-    function SaveManager:CheckSubFolder(createFolder)
-        if typeof(self.SubFolder) ~= "string" or self.SubFolder == "" then return false end
-
-        if createFolder == true then
-            local path = self.Folder .. "/settings/" .. self.SubFolder
-            if not exploitEnv.isfolder(path) then
-                exploitEnv.makefolder(path)
-            end
-        end
-
-        return true
-    end
-
-    function SaveManager:CheckFolderTree()
-        if not exploitEnv.isfolder(self.Folder) then
-            self:BuildFolderTree()
-        end
-    end
-
-    SaveManager:BuildFolderTree()
-end
-
--- Integrate Managers to add theme/config tabs
-function Library:ApplyThemeManager(tab, groupboxName)
-    if not tab then return end
-    local groupbox = tab:AddRightGroupbox(groupboxName or "ThemeManager", "palette")
-
-    groupbox:AddLabel("Colors", true)
-    groupbox:AddColorPicker("BackgroundColor", { Default = self.Scheme.BackgroundColor })
-    groupbox:AddColorPicker("MainColor", { Default = self.Scheme.MainColor })
-    groupbox:AddColorPicker("AccentColor", { Default = self.Scheme.AccentColor })
-    groupbox:AddColorPicker("OutlineColor", { Default = self.Scheme.OutlineColor })
-    groupbox:AddColorPicker("FontColor", { Default = self.Scheme.FontColor })
-
-    groupbox:AddDropdown("FontFace", {
-        Text = "Font Face",
-        Default = "Code",
-        Values = { "BuilderSans", "Code", "Fantasy", "Gotham", "Jura", "Roboto", "RobotoMono", "SourceSans" },
-    })
-
-    local themeList = {}
-    for name in pairs(ThemeManager.BuiltInThemes) do
-        table.insert(themeList, name)
-    end
-
-    groupbox:AddDropdown("ThemeList", { Text = "Themes", Values = themeList, Default = 1 })
-    groupbox:AddButton("Apply Theme", function()
-        local selectedTheme = self.Options.ThemeList:GetValue()
-        ThemeManager:ApplyTheme(selectedTheme)
+        local tabs = {}
+		for _, t in ipairs(defaultTabs) do
+			local okTab, res = pcall(function()
+				return win:Tab(t.name, t.icon)
+			end)
+			if okTab and res then
+				tabs[t.name] = res
+			end
+		end
+		buildMainTab(tabs["Main"])
+		buildEspTab(tabs["Esp"])
+		buildMiscTab(tabs["Misc"])
+		buildConfigTab(tabs["Config"])
     end)
-
-    groupbox:AddButton("Reset to Default", function()
-        ThemeManager:ApplyTheme("Default")
-    end)
-
-    -- Apply changes when color pickers change
-    local colorPickers = { "BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor" }
-    for _, picker in colorPickers do
-        self.Options[picker]:OnChanged(function()
-            self.Scheme[picker] = self.Options[picker].Value
-            ThemeManager:ThemeUpdate()
-        end)
-    end
-
-    self.Options.FontFace:OnChanged(function()
-        self:SetFont(Enum.Font[self.Options.FontFace.Value])
-        ThemeManager:ThemeUpdate()
-    end)
-
-    -- Attach Options to Library elements (this is a basic implementation)
-    function groupbox:AddColorPicker(idx, info)
-        local colorPicker = self:AddColorPicker(idx, info)
-        self.Library.Options[idx] = colorPicker
-        return colorPicker
-    end
-
-    function groupbox:AddDropdown(idx, info)
-        local dropdown = self:AddDropdown(idx, info)
-        self.Library.Options[idx] = dropdown
-        return dropdown
+    if not ok then
+        warn("KeyForge autorun error:", err)
     end
 end
-
-function Library:ApplySaveManager(tab, groupboxName)
-    if not tab then return end
-    local groupbox = tab:AddRightGroupbox(groupboxName or "SaveManager", "hard-drive")
-
-    groupbox:AddInput("ConfigName", { Text = "Config name" })
-    groupbox:AddButton("Save Config", function()
-        local name = self.Options.ConfigName:GetValue() or "default"
-        SaveManager:Save(name)
-        self:Notify("Saved config: " .. name)
-    end)
-
-    groupbox:AddButton("Load Config", function()
-        local name = self.Options.ConfigName:GetValue() or "default"
-        local success = SaveManager:Load(name)
-        if success then
-            self:Notify("Loaded config: " .. name)
-        else
-            self:Notify("Failed to load config: " .. name)
-        end
-    end)
-
-    -- Attach Option
-    function groupbox:AddInput(idx, info)
-        local input = self:AddInput(idx, info)
-        self.Library.Options[idx] = input
-        return input
-    end
-end
-
--- Update existing elements to track in Options/Toggles (minimal integration due to existing structure)
--- Note: Full integration would require modifying all element creation to register with Library.Options/Toggles
-
--- Warning Box System
-function elementHandler:WarningBox(titleText: string, descriptionText: string, warningType: string?): table
-    local warningBox = setmetatable({}, labelHandler)
-    local warningInstance = originalElements.Label:Clone()
-    warningInstance.Name = "WarningBox"
-
-    -- Set warning colors based on type
-    local warningColors = {
-        Warning = Color3.fromRGB(255, 193, 7),  -- Yellow for warnings
-        Error = Color3.fromRGB(220, 53, 69),    -- Red for errors
-        Info = Library.Scheme.AccentColor,      -- Accent for info
-        Success = Color3.fromRGB(25, 135, 84)   -- Green for success
-    }
-
-    local backgroundColor = warningColors[warningType or "Info"] or Library.Scheme.AccentColor
-    warningInstance.LabelBackground.BackgroundColor3 = backgroundColor
-
-    -- Create title text element
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "WarningTitle"
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.Text = titleText or "Warning"
-    titleLabel.TextColor3 = Library.Scheme.FontColor
-    titleLabel.TextSize = 14
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.Size = UDim2.new(1, 0, 0, 18)
-    titleLabel.Parent = warningInstance.LabelBackground
-
-    -- Create description text element
-    local descLabel = Instance.new("TextLabel")
-    descLabel.Name = "WarningDescription"
-    descLabel.BackgroundTransparency = 1
-    descLabel.Font = Enum.Font.Gotham
-    descLabel.Text = descriptionText or "Please check your settings."
-    descLabel.TextColor3 = Library.Scheme.FontColor
-    descLabel.TextSize = 13
-    descLabel.TextWrapped = true
-    descLabel.TextXAlignment = Enum.TextXAlignment.Left
-    descLabel.TextYAlignment = Enum.TextYAlignment.Top
-    descLabel.Position = UDim2.new(0, 4, 0, 20)
-    descLabel.Size = UDim2.new(1, -8, 0, 0)
-    descLabel.Parent = warningInstance.LabelBackground
-
-    -- Calculate required height
-    local textParams = Instance.new("GetTextBoundsParams")
-    textParams.Text = descLabel.Text
-    textParams.Font = descLabel.FontFace
-    textParams.Size = 13
-    textParams.Width = descLabel.AbsoluteSize.X - 8
-    local textBounds = TextService:GetTextBoundsAsync(textParams)
-
-    descLabel.Size = UDim2.new(1, -8, 0, math.max(textBounds.Y, 16))
-    warningInstance.Size = UDim2.new(1, 0, 0, descLabel.Position.Y.Offset + descLabel.Size.Y.Offset + warningInstance.LabelPadding.PaddingTop.Offset + warningInstance.LabelPadding.PaddingBottom.Offset)
-
-    warningBox.Type = "WarningBox"
-    warningBox.IdentifierText = titleText or "Warning"
-    warningBox.Instance = warningInstance
-    warningBox.GuiToRemove = warningInstance
-
-    if self.Type == "SearchBar" then
-        self.ChildedElementsInfo[warningInstance] = warningBox
-    end
-
-    warningInstance.Parent = self.ElementToParentChildren
-
-    -- Add close button
-    local closeButton = Instance.new("TextButton")
-    closeButton.Name = "CloseButton"
-    closeButton.BackgroundTransparency = 1
-    closeButton.Font = Enum.Font.GothamBold
-    closeButton.Text = "×"
-    closeButton.TextColor3 = Library.Scheme.FontColor
-    closeButton.TextSize = 16
-    closeButton.Size = UDim2.new(0, 20, 0, 20)
-    closeButton.Position = UDim2.new(1, -25, 0, 2)
-    closeButton.Parent = warningInstance.LabelBackground
-
-    closeButton.MouseButton1Click:Connect(function()
-        warningInstance:Destroy()
-    end)
-
-    return warningBox
-end
-
--- UI Library for KeyForge
--- This library provides a modular UI system for creating windows, tabs, sections, and various GUI elements in Roblox.
--- It has been refactored from the KeyForge hub script to be a reusable library, making script development easier by providing pre-built UI components.
--- Enhanced with ThemeManager and SaveManager for themes and configurations, plus enhanced features like tooltips and warning boxes.
-
--- Usage Example:
--- local Library = loadstring(game:HttpGet("https://path/to/library"))()  -- or require your module
--- local win = Library.new("My Script", true, 600, 400)  -- Create a window
--- local tab = win:Tab("Main", "rbxassetid://icon")  -- Add a tab
--- local sec = tab:Section("Features")  -- Add a section
--- sec:Toggle("Enable Feature", false, function(state) print("Toggle:", state) end)  -- Add elements like toggles, buttons, sliders, etc.
---
--- This abstraction allows developers to quickly build intuitive UIs without handling low-level GUI creation, promoting cleaner and more maintainable code.
 
 return Library

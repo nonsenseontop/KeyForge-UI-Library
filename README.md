@@ -1,14 +1,18 @@
 # KeyForge UI Library
 
-A modular UI library for Roblox scripts, designed to simplify the creation of user interfaces with pre-built components like windows, tabs, toggles, sliders, and more.
+A comprehensive, production-ready UI library for Roblox scripts featuring deep theme and config management integration. Create professional interfaces with windows, tabs, interactive elements, and persistent user customization.
 
-## Features
+## ✨ Key Features
 
-- **Easy-to-Use API**: Create complex UIs with simple method calls.
-- **Modular Design**: Reusable components that promote code maintainability.
-- **Animations & Themes**: Built-in animations and theming support.
-- **Config Management**: Save and load UI states with integrated config system.
-- **Mobile Support**: Responsive design for mobile devices.
+- **🎨 Deep Theme Integration**: Built-in ThemeManager with real-time color updates and custom theme support
+- **💾 Advanced Save System**: Persistent configuration saving/loading with auto-registration
+- **📢 Professional Notifications**: Rich notification system with animations, DPI scaling, and structured content
+- **🔧 Automatic Manager Setup**: One-line functions to add theme/config tabs to any window
+- **📱 Enhanced Mobile Support**: Responsive design with touch optimizations and DPI scaling
+- **⚠️ Warning Box System**: Color-coded alerts for different message types (Info, Warning, Error, Success)
+- **🛠️ Helper Utilities**: MakeOutline for consistent UI framing and enhanced tooltip system
+- **🎯 Easy-to-Use API**: Intuitive method calls for creating complex UIs
+- **📐 Perfect Scaling**: DPI-aware elements that look crisp on any resolution
 
 ## Installation
 
@@ -48,6 +52,73 @@ end)
 section:Button("Click Me", function()
     print("Button clicked!")
 end)
+```
+
+## Advanced Usage - Theme & Save Managers
+
+### 🎨 Theme Manager Integration
+
+Automatically add a full theme customization interface:
+
+```lua
+local tab = win:Tab("Settings")
+
+-- Adds color pickers for all theme colors, font selector, and theme presets
+Library:ApplyThemeManager(tab, "Appearance")
+
+-- Manual theme control
+ThemeManager:ApplyTheme("Dark")  -- Apply built-in theme
+ThemeManager:ApplyTheme("MyCustomTheme")  -- Apply custom theme
+```
+
+Available theme options:
+- **BackgroundColor**: Main window background
+- **MainColor**: Section and tab backgrounds
+- **AccentColor**: Buttons, sliders, and highlights
+- **OutlineColor**: Borders and frames
+- **FontColor**: Text color
+
+### 💾 Save Manager Integration
+
+Automatically add save/load configuration:
+
+```lua
+local tab = win:Tab("Settings")
+
+-- Adds config input and save/load buttons
+Library:ApplySaveManager(tab, "Configuration")
+
+-- Manual config control
+SaveManager:Save("myConfig")  -- Save current settings
+SaveManager:Load("myConfig")  -- Load saved settings
+```
+
+### 📢 Notifications System
+
+Display professional notifications:
+
+```lua
+-- Simple notification
+Library:Notify("Feature enabled successfully!")
+
+-- Rich notification with title and description
+Library:Notify({
+    Title = "Important Update",
+    Description = "Please restart your script for best performance",
+    Time = 5  -- Display duration in seconds
+})
+```
+
+### ⚠️ Warning Boxes
+
+Show color-coded alerts in your interface:
+
+```lua
+-- Different severity levels with distinct colors
+section:WarningBox("Beta Feature", "This feature is in beta and may change.", "Warning")
+section:WarningBox("Connection Error", "Unable to connect to server.", "Error")
+section:WarningBox("Success!", "Settings saved successfully.", "Success")
+section:WarningBox("Tip", "You can customize themes in the Settings tab.", "Info")
 ```
 
 ## Available UI Elements
@@ -95,29 +166,114 @@ Most UI elements can be added to any section or container:
 - `Label(text, textSize, textColor)`
 - `Title(text)`
 
-### Manager Objects
+## Utility Functions
 
-Access config management:
+### Theme & Save Management
 
-```lua
-local config = Library.ConfigManager
-config:Save("config_name")
-config:Load("config_name")
-```
+- `Library:ApplyThemeManager(tab, groupboxName)` - Add complete theme customization UI to specified tab
+- `Library:ApplySaveManager(tab, groupboxName)` - Add save/load configuration UI to specified tab
+
+### Element Registration
+
+- `Library:RegisterElementType(elementType, updateFunction)` - Register custom element types for theme updates
+- `Library:RegisterOption(element, identifier, elementType, defaultValue)` - Register elements for configuration saving
+- `Library:RegisterToggle(element, identifier, defaultValue)` - Register toggle elements for saving/loading
+
+### Visual Helpers
+
+- `Library:MakeOutline(frame, cornerRadius)` - Create consistent outline borders for UI elements
+- `Library:AddTooltip(infoStr, disabledInfoStr, hoverInstance)` - Add hover tooltips to elements
+- `Library:Notify(message)` or `Library:Notify({Title, Description, Time})` - Display notifications
+
+### DPI & Scaling
+
+- `Library:GetTextBounds(text, font, size, width)` - Get precise text dimensions for layout
+- `Library:UpdateDPI(instance, properties)` - Apply DPI scaling to UI elements
+
+## Theme Manager API
+
+### Built-in Themes
+- "Default", "Light", "Dark"
+
+### Methods
+- `ThemeManager:ApplyTheme(themeName)` - Switch to specified theme instantly
+- `ThemeManager:SetFolder(folder)` - Set theme save location
+- `ThemeManager:ThemeUpdate()` - Force refresh all element colors
+
+## Save Manager API
+
+### Methods
+- `SaveManager:Save(configName)` - Save current UI state
+- `SaveManager:Load(configName)` - Load saved configuration
+- `SaveManager:SetFolder(folder)` - Set config save location
+- `SaveManager:IsReady()` - Check if file system is available
+- `SaveManager:GetConfigs()` - Get list of saved configurations
+
+### Supported Element Types
+- Toggle, Slider, Dropdown, ColorPicker, Input
+
+## Warning Box Types
+
+- **"Info"** - Blue accent color for general information
+- **"Warning"** - Yellow for caution messages
+- **"Error"** - Red for error conditions
+- **"Success"** - Green for positive confirmations
+
+## Recent Updates
+
+### v2.x - Major Enhancement Update
+- **🎨 Deep Theme Integration**: Complete theme manager with real-time color updates
+- **💾 Advanced Save System**: Persistent configuration with auto-registration
+- **📢 Professional Notifications**: Rich notification system with DPI scaling and animations
+- **⚠️ Warning Box System**: Color-coded alerts (Info, Warning, Error, Success)
+- **🔧 Automatic Manager Setup**: One-line functions to add theme/config tabs
+- **📐 DPI Scaling Support**: Perfect scaling across all resolutions
+- **🛠️ Helper Utilities**: MakeOutline for consistent borders, enhanced tooltips
+- **📱 Improved Mobile Support**: Touch optimizations and responsive design
 
 ## Configuration
 
-The library includes a built-in config system that can save/load UI states to/from files (if file functions are available).
+The library includes an advanced configuration system with:
+
+- **Persistent Settings**: Save/load UI states automatically
+- **Element Auto-Registration**: New elements automatically register for saving
+- **File System Integration**: Save to custom folders with backup support
+- **Theme Persistence**: Color schemes and font preferences are preserved
+
+### Configuration Files
+- Themes: `KeyForgeSettings/themes/`
+- Configs: `KeyForgeSettings/settings/`
 
 ## Compatibility
 
 - Works on most Roblox exploits with GUI and mouse support.
-- Includes mobile responsiveness.
+- Includes mobile responsiveness with touch controls.
 - Supports both Synapse X and other executor environments.
+- File system functions required for save/load features.
+
+## Troubleshooting
+
+### Theme/Save Manager Not Working
+- Ensure file system functions are available in your executor
+- Check that `KeyForgeSettings` folder can be created
+- Verify no conflicts with other scripts
+
+### DPI Scaling Issues
+- Force reload the script after changing resolutions
+- Check that DPI scaling is set to 1.0 if experiencing issues
+
+### Mobile Responsiveness
+- On mobile devices, interface automatically adjusts size
+- Touch controls are optimized for smaller screens
 
 ## Contributing
 
 Contributions are welcome! Please open issues for bugs or feature requests, and submit pull requests for improvements.
+
+### Development Notes
+- The library is designed to be modular and extensible
+- New UI elements should follow the established registration pattern
+- Theme compatibility is maintained through the Scheme system
 
 ## License
 
