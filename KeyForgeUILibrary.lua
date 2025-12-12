@@ -1019,7 +1019,7 @@ end
 
 
 
-local function createOriginialElements()
+local function createOriginalElements()
 	local function createWindow()
 		local screenGui = Instance.new("ScreenGui")
 		local background = Instance.new("Frame")
