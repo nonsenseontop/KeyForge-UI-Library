@@ -175,7 +175,8 @@ Library.Scheme = {
     MainColor = Color3.fromRGB(31, 31, 31),
     AccentColor = Color3.fromRGB(0, 170, 255),
     OutlineColor = Color3.fromRGB(37, 37, 51),
-    FontColor = Color3.fromRGB(168, 168, 168)
+    FontColor = Color3.fromRGB(168, 168, 168),
+    Font = Font.fromEnum(Enum.Font.Gotham)
 }
 
 Library.Options = {}
