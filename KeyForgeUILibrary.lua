@@ -162,6 +162,270 @@ local keybindHandler = {}
 local textBoxHandler = {}
 local colorWheelHandler = {}
 
+-- Theme and Config Integration
+local cloneref = (cloneref or clonereference or function(instance: any)
+    return instance
+end)
+local HttpService: HttpService = cloneref(game:GetService("HttpService"))
+local filesystemAvailable = exploitEnv and exploitEnv.isfolder and exploitEnv.makefolder and exploitEnv.writefile and exploitEnv.readfile and exploitEnv.listfiles and exploitEnv.isfile and exploitEnv.delfile
+
+-- Initialize library properties
+Library.Scheme = {
+    BackgroundColor = Color3.fromRGB(21, 21, 21),
+    MainColor = Color3.fromRGB(31, 31, 31),
+    AccentColor = Color3.fromRGB(0, 170, 255),
+    OutlineColor = Color3.fromRGB(37, 37, 51),
+    FontColor = Color3.fromRGB(168, 168, 168)
+}
+
+Library.Options = {}
+Library.Toggles = {}
+
+-- Notification system
+Library.NotificationArea = nil
+Library.NotificationList = nil
+Library.Notifications = {}
+Library.NotifySide = "Right"
+
+-- DPI scaling support
+Library.DPIScale = 1
+
+-- Helper functions for theming
+Library.UpdateColorsUsingRegistry = function()
+    -- This will be implemented when updating element creation
+end
+
+function Library:SetFont(fontName)
+    -- Implement font setting (placeholder)
+    Library.Scheme.Font = Font.fromEnum(Enum.Font[fontName] or Enum.Font.Code)
+end
+
+-- Enhanced notification system
+do
+    -- Create notification area when first window is created
+    function Library:InitNotifications()
+        if Library.NotificationArea then return end
+
+        Library.NotificationArea = Instance.new("Frame")
+        Library.NotificationArea.Name = "NotificationArea"
+        Library.NotificationArea.AnchorPoint = Vector2.new(1, 0)
+        Library.NotificationArea.BackgroundTransparency = 1
+        Library.NotificationArea.Position = UDim2.new(1, -6, 0, 6)
+        Library.NotificationArea.Size = UDim2.new(0, 300, 1, -6)
+        Library.NotificationArea.ZIndex = 999
+        Library.NotificationArea.Parent = game:GetService("CoreGui")
+
+        Library.NotificationList = Instance.new("UIListLayout")
+        Library.NotificationList.FillDirection = Enum.FillDirection.Vertical
+        Library.NotificationList.HorizontalAlignment = Enum.HorizontalAlignment.Right
+        Library.NotificationList.VerticalAlignment = Enum.VerticalAlignment.Bottom
+        Library.NotificationList.Padding = UDim.new(0, 6)
+        Library.NotificationList.Parent = Library.NotificationArea
+    end
+
+    function Library:Notify(...)
+        -- Initialize notifications if not done yet
+        self:InitNotifications()
+
+        local Data = {}
+        local Info = select(1, ...)
+
+        if typeof(Info) == "table" then
+            Data.Title = tostring(Info.Title)
+            Data.Description = tostring(Info.Description)
+            Data.Time = Info.Time or 3
+        else
+            Data.Description = tostring(Info)
+            Data.Time = select(2, ...) or 3
+        end
+        Data.Destroyed = false
+
+        -- Create notification frame
+        local FakeBackground = Instance.new("Frame")
+        FakeBackground.Name = "NotificationBackground"
+        FakeBackground.AutomaticSize = Enum.AutomaticSize.Y
+        FakeBackground.BackgroundTransparency = 1
+        FakeBackground.Size = UDim2.fromScale(1, 0)
+        FakeBackground.ZIndex = 1000
+        FakeBackground.Parent = Library.NotificationArea
+
+        local Background = Library:MakeOutline(FakeBackground, 4)
+        Background.AutomaticSize = Enum.AutomaticSize.Y
+        Background.Position = Library.NotifySide:lower() == "left" and UDim2.new(-1, -6, 0, -2) or UDim2.new(1, 6, 0, -2)
+        Background.Size = UDim2.fromScale(1, 0)
+        Library:UpdateDPI(Background, {Position = false, Size = false})
+
+        local Holder = Instance.new("Frame")
+        Holder.Name = "Holder"
+        Holder.BackgroundColor3 = Library.Scheme.BackgroundColor
+        Holder.Position = UDim2.fromOffset(2, 2)
+        Holder.Size = UDim2.new(1, -4, 1, -4)
+        Holder.Parent = Background
+
+        local UICorner = Instance.new("UICorner")
+        UICorner.CornerRadius = UDim.new(0, 3)
+        UICorner.Parent = Holder
+
+        local UIListLayout = Instance.new("UIListLayout")
+        UIListLayout.FillDirection = Enum.FillDirection.Vertical
+        UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+        UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+        UIListLayout.Padding = UDim.new(0, 4)
+        UIListLayout.Parent = Holder
+
+        local UIPadding = Instance.new("UIPadding")
+        UIPadding.PaddingBottom = UDim.new(0, 8)
+        UIPadding.PaddingLeft = UDim.new(0, 8)
+        UIPadding.PaddingRight = UDim.new(0, 8)
+        UIPadding.PaddingTop = UDim.new(0, 8)
+        UIPadding.Parent = Holder
+
+        local TitleLabel
+        local DescriptionLabel
+
+        if Data.Title then
+            TitleLabel = Instance.new("TextLabel")
+            TitleLabel.BackgroundTransparency = 1
+            TitleLabel.Size = UDim2.new(1, 0, 0, 14)
+            TitleLabel.Text = Data.Title
+            TitleLabel.TextColor3 = Library.Scheme.FontColor
+            TitleLabel.TextSize = 14
+            TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+            TitleLabel.Font = Library.Scheme.Font
+            TitleLabel.Parent = Holder
+        end
+
+        if Data.Description then
+            DescriptionLabel = Instance.new("TextLabel")
+            DescriptionLabel.BackgroundTransparency = 1
+            DescriptionLabel.Size = UDim2.new(1, 0, 0, 0)
+            DescriptionLabel.Text = Data.Description
+            DescriptionLabel.TextColor3 = Library.Scheme.FontColor
+            DescriptionLabel.TextSize = 13
+            DescriptionLabel.TextWrapped = true
+            DescriptionLabel.TextXAlignment = Enum.TextXAlignment.Left
+            DescriptionLabel.TextYAlignment = Enum.TextYAlignment.Top
+            DescriptionLabel.Font = Library.Scheme.Font
+            DescriptionLabel.Parent = Holder
+
+            -- Resize based on text
+            local textBounds = TextService:GetTextBoundsAsync({
+                Text = Data.Description,
+                Font = Library.Scheme.Font,
+                Size = 13,
+                Width = 300 - 16
+            })
+            DescriptionLabel.Size = UDim2.new(1, 0, 0, textBounds.Y)
+        end
+
+        -- Resize function
+        local function ResizeNotification()
+            FakeBackground.Size = UDim2.fromOffset(300, UIListLayout.AbsoluteContentSize.Y + 20)
+            Library:UpdateDPI(FakeBackground, {Size = UDim2.fromOffset(300, UIListLayout.AbsoluteContentSize.Y + 20)})
+        end
+
+        local NotificationData = {
+            Title = Data.Title,
+            Description = Data.Description,
+            Time = Data.Time,
+            Destroyed = false,
+
+            Background = FakeBackground,
+            AnimatingBackground = Background,
+
+            Destroy = function(self)
+                if self.Destroyed then return end
+                self.Destroyed = true
+
+                -- Animate out
+                TweenService:Create(Background, TweenInfo.new(0.25), {
+                    Position = Library.NotifySide:lower() == "left" and UDim2.new(-1, -6, 0, -2) or UDim2.new(1, 6, 0, -2)
+                }):Play()
+
+                task.wait(0.25)
+                Library.Notifications[FakeBackground] = nil
+                FakeBackground:Destroy()
+            end
+        }
+
+        Library.Notifications[FakeBackground] = NotificationData
+
+        ResizeNotification()
+        FakeBackground.Visible = true
+
+        -- Animate in
+        TweenService:Create(Background, TweenInfo.new(0.25), {
+            Position = UDim2.fromOffset(-2, -2)
+        }):Play()
+
+        -- Auto destroy
+        task.spawn(function()
+            task.wait(Data.Time)
+            if not NotificationData.Destroyed then
+                NotificationData:Destroy()
+            end
+        end)
+
+        return NotificationData
+    end
+end
+
+-- DPI scaling
+function Library:GetTextBounds(text, font, size, width)
+    local params = Instance.new("GetTextBoundsParams")
+    params.Text = text
+    params.Font = font or Library.Scheme.Font
+    params.Size = size * Library.DPIScale
+    params.Width = width or workspace.CurrentCamera.ViewportSize.X - 32
+
+    local bounds = TextService:GetTextBoundsAsync(params)
+    return bounds.X / Library.DPIScale, bounds.Y / Library.DPIScale
+end
+
+function Library:UpdateDPI(instance, properties)
+    if not Library.DPIRegistry then
+        Library.DPIRegistry = {}
+    end
+
+    for property, value in pairs(properties) do
+        if property == "TextSize" then
+            instance[property] = value * Library.DPIScale
+        end
+    end
+end
+
+-- Create outline helper
+function Library:MakeOutline(frame, cornerRadius)
+    local outlineHolder = Instance.new("Frame")
+    outlineHolder.Name = "Outline"
+    outlineHolder.BackgroundColor3 = Color3.new(0, 0, 0)
+    outlineHolder.BackgroundTransparency = 1
+    outlineHolder.BorderSizePixel = 0
+    outlineHolder.Position = UDim2.fromOffset(-2, -2)
+    outlineHolder.Size = UDim2.new(1, 4, 1, 4)
+    outlineHolder.ZIndex = frame.ZIndex - 1
+    outlineHolder.Parent = frame
+
+    local outline = Instance.new("Frame")
+    outline.BackgroundColor3 = Library.Scheme.OutlineColor
+    outline.BorderSizePixel = 0
+    outline.Position = UDim2.fromOffset(1, 1)
+    outline.Size = UDim2.new(1, -2, 1, -2)
+    outline.Parent = outlineHolder
+
+    if cornerRadius and cornerRadius > 0 then
+        local corner1 = Instance.new("UICorner")
+        corner1.CornerRadius = UDim.new(0, cornerRadius + 1)
+        corner1.Parent = outlineHolder
+
+        local corner2 = Instance.new("UICorner")
+        corner2.CornerRadius = UDim.new(0, cornerRadius)
+        corner2.Parent = outline
+    end
+
+    return outlineHolder, outline
+end
+
 elementHandler.__index = elementHandler
 windowHandler.__index = function(_, i) return rawget(windowHandler, i) or rawget(elementHandler, i) end
 tabHandler.__index = function(_, i ) return rawget(tabHandler, i) or rawget(elementHandler, i) end
@@ -3940,9 +4204,324 @@ end
 
 createOriginalElements()
 
+-- Theme and Config Integration
+local ThemeManager = {} do
+    local ThemeFields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor" }
+    ThemeManager.Folder = "KeyForgeSettings"
+    ThemeManager.SubFolder = ""
+    ThemeManager.Library = Library
+
+    ThemeManager.BuiltInThemes = {
+        ["Default"] = {
+            1,
+            { FontColor = "a8a8a8", MainColor = "1f1f1f", AccentColor = "00aaff", BackgroundColor = "151515", OutlineColor = "252533" },
+        },
+        ["Light"] = {
+            2,
+            { FontColor = "000000", MainColor = "ffffff", AccentColor = "ffaa00", BackgroundColor = "f5f5f5", OutlineColor = "cccccc" },
+        },
+        ["Dark"] = {
+            3,
+            { FontColor = "ffffff", MainColor = "000000", AccentColor = "ff0000", BackgroundColor = "1a1a1a", OutlineColor = "333333" },
+        }
+    }
+
+    function ThemeManager:BuildFolderTree()
+        local paths = { self.Folder .. "/themes" }
+        for _, path in paths do
+            if not exploitEnv.isfolder(path) then
+                exploitEnv.makefolder(path)
+            end
+        end
+    end
+
+    function ThemeManager:SetFolder(folder)
+        self.Folder = folder
+        self:BuildFolderTree()
+    end
+
+    function ThemeManager:ApplyTheme(theme)
+        local customThemeData = self:GetCustomTheme(theme)
+        local data = customThemeData or self.BuiltInThemes[theme]
+
+        if not data then
+            return
+        end
+
+        local scheme = data[2]
+        for idx, val in pairs(customThemeData or scheme) do
+            if idx == "VideoLink" then
+                continue
+            elseif idx == "FontFace" then
+                self.Library:SetFont(Enum.Font[val])
+
+                if self.Library.Options[idx] then
+                    self.Library.Options[idx]:SetValue(val)
+                end
+            else
+                self.Library.Scheme[idx] = Color3.fromHex(val)
+
+                if self.Library.Options[idx] then
+                    self.Library.Options[idx]:SetValueRGB(Color3.fromHex(val))
+                end
+            end
+        end
+
+        self:ThemeUpdate()
+    end
+
+    function ThemeManager:ThemeUpdate()
+        self.Library.UpdateColorsUsingRegistry()
+    end
+
+    function ThemeManager:GetCustomTheme(file)
+        local path = self.Folder .. "/themes/" .. file .. ".json"
+        if not exploitEnv.isfile(path) then
+            return nil
+        end
+
+        local data = exploitEnv.readfile(path)
+        local success, decoded = pcall(HttpService.JSONDecode, HttpService, data)
+
+        if not success then
+            return nil
+        end
+
+        return decoded
+    end
+
+    ThemeManager:BuildFolderTree()
+end
+
+local SaveManager = {} do
+    SaveManager.Folder = "KeyForgeSettings"
+    SaveManager.SubFolder = ""
+    SaveManager.Library = Library
+
+    function SaveManager:BuildFolderTree()
+        local paths = { self.Folder .. "/settings", self.Folder .. "/settings/configs" }
+        for _, path in paths do
+            if not exploitEnv.isfolder(path) then
+                exploitEnv.makefolder(path)
+            end
+        end
+    end
+
+    function SaveManager:SetFolder(folder)
+        self.Folder = folder
+        self:BuildFolderTree()
+    end
+
+    function SaveManager:Save(name)
+        self:CheckFolderTree()
+        local fullPath = self.Folder .. "/settings/" .. name .. ".json"
+        if SaveManager:CheckSubFolder(true) then
+            fullPath = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
+        end
+
+        local data = { objects = {} }
+
+        for idx, toggle in pairs(self.Library.Toggles) do
+            if not toggle.Type then continue end
+            table.insert(data.objects, {
+                type = "Toggle",
+                idx = idx,
+                value = toggle.Enabled or false
+            })
+        end
+
+        for idx, option in pairs(self.Library.Options) do
+            if not option.Type then continue end
+            if option.Type == "Slider" then
+                table.insert(data.objects, {
+                    type = "Slider",
+                    idx = idx,
+                    value = tostring(option.Value or 0)
+                })
+            elseif option.Type == "Dropdown" then
+                table.insert(data.objects, {
+                    type = "Dropdown",
+                    idx = idx,
+                    value = option.Value or ""
+                })
+            elseif option.Type == "ColorPicker" then
+                table.insert(data.objects, {
+                    type = "ColorPicker",
+                    idx = idx,
+                    value = (option.Value or Color3.new()):ToHex(),
+                    transparency = option.Transparency or 0
+                })
+            elseif option.Type == "Toggle" then
+                table.insert(data.objects, {
+                    type = "Toggle",
+                    idx = idx,
+                    value = option.Value or false
+                })
+            elseif option.Type == "Input" then
+                table.insert(data.objects, {
+                    type = "Input",
+                    idx = idx,
+                    text = option.Value or ""
+                })
+            end
+        end
+
+        local success, encoded = pcall(HttpService.JSONEncode, HttpService, data)
+        if success then
+            exploitEnv.writefile(fullPath, encoded)
+            return true
+        end
+        return false, "Encoding failed"
+    end
+
+    function SaveManager:Load(name)
+        self:CheckFolderTree()
+        local file = self.Folder .. "/settings/" .. name .. ".json"
+        if SaveManager:CheckSubFolder(true) then
+            file = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
+        end
+
+        if not exploitEnv.isfile(file) then return false, "File not found" end
+
+        local success, decoded = pcall(HttpService.JSONDecode, HttpService, exploitEnv.readfile(file))
+        if not success then return false, "Decode error" end
+
+        for _, option in pairs(decoded.objects) do
+            if option.type == "Toggle" and self.Library.Toggles[option.idx] then
+                self.Library.Toggles[option.idx]:Set(option.value, function() end)
+            elseif option.type == "Slider" and self.Library.Options[option.idx] then
+                self.Library.Options[option.idx]:SetValue(platform.number(option.value) or 0, true)
+            elseif option.type == "Dropdown" and self.Library.Options[option.idx] then
+                self.Library.Options[option.idx]:SetValue(option.value, true)
+            elseif option.type == "ColorPicker" and self.Library.Options[option.idx] then
+                self.Library.Options[option.idx]:SetValueRGB(Color3.fromHex(option.value), true)
+            elseif option.type == "Input" and self.Library.Options[idx] then
+                self.Library.Options[option.idx]:SetValue(option.text, true)
+            end
+        end
+
+        return true
+    end
+
+    function SaveManager:CheckSubFolder(createFolder)
+        if typeof(self.SubFolder) ~= "string" or self.SubFolder == "" then return false end
+
+        if createFolder == true then
+            local path = self.Folder .. "/settings/" .. self.SubFolder
+            if not exploitEnv.isfolder(path) then
+                exploitEnv.makefolder(path)
+            end
+        end
+
+        return true
+    end
+
+    function SaveManager:CheckFolderTree()
+        if not exploitEnv.isfolder(self.Folder) then
+            self:BuildFolderTree()
+        end
+    end
+
+    SaveManager:BuildFolderTree()
+end
+
+-- Integrate Managers to add theme/config tabs
+function Library:ApplyThemeManager(tab, groupboxName)
+    if not tab then return end
+    local groupbox = tab:AddRightGroupbox(groupboxName or "ThemeManager", "palette")
+
+    groupbox:AddLabel("Colors", true)
+    groupbox:AddColorPicker("BackgroundColor", { Default = self.Scheme.BackgroundColor })
+    groupbox:AddColorPicker("MainColor", { Default = self.Scheme.MainColor })
+    groupbox:AddColorPicker("AccentColor", { Default = self.Scheme.AccentColor })
+    groupbox:AddColorPicker("OutlineColor", { Default = self.Scheme.OutlineColor })
+    groupbox:AddColorPicker("FontColor", { Default = self.Scheme.FontColor })
+
+    groupbox:AddDropdown("FontFace", {
+        Text = "Font Face",
+        Default = "Code",
+        Values = { "BuilderSans", "Code", "Fantasy", "Gotham", "Jura", "Roboto", "RobotoMono", "SourceSans" },
+    })
+
+    local themeList = {}
+    for name in pairs(ThemeManager.BuiltInThemes) do
+        table.insert(themeList, name)
+    end
+
+    groupbox:AddDropdown("ThemeList", { Text = "Themes", Values = themeList, Default = 1 })
+    groupbox:AddButton("Apply Theme", function()
+        local selectedTheme = self.Options.ThemeList:GetValue()
+        ThemeManager:ApplyTheme(selectedTheme)
+    end)
+
+    groupbox:AddButton("Reset to Default", function()
+        ThemeManager:ApplyTheme("Default")
+    end)
+
+    -- Apply changes when color pickers change
+    local colorPickers = { "BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor" }
+    for _, picker in colorPickers do
+        self.Options[picker]:OnChanged(function()
+            self.Scheme[picker] = self.Options[picker].Value
+            ThemeManager:ThemeUpdate()
+        end)
+    end
+
+    self.Options.FontFace:OnChanged(function()
+        self:SetFont(Enum.Font[self.Options.FontFace.Value])
+        ThemeManager:ThemeUpdate()
+    end)
+
+    -- Attach Options to Library elements (this is a basic implementation)
+    function groupbox:AddColorPicker(idx, info)
+        local colorPicker = self:AddColorPicker(idx, info)
+        self.Library.Options[idx] = colorPicker
+        return colorPicker
+    end
+
+    function groupbox:AddDropdown(idx, info)
+        local dropdown = self:AddDropdown(idx, info)
+        self.Library.Options[idx] = dropdown
+        return dropdown
+    end
+end
+
+function Library:ApplySaveManager(tab, groupboxName)
+    if not tab then return end
+    local groupbox = tab:AddRightGroupbox(groupboxName or "SaveManager", "hard-drive")
+
+    groupbox:AddInput("ConfigName", { Text = "Config name" })
+    groupbox:AddButton("Save Config", function()
+        local name = self.Options.ConfigName:GetValue() or "default"
+        SaveManager:Save(name)
+        self:Notify("Saved config: " .. name)
+    end)
+
+    groupbox:AddButton("Load Config", function()
+        local name = self.Options.ConfigName:GetValue() or "default"
+        local success = SaveManager:Load(name)
+        if success then
+            self:Notify("Loaded config: " .. name)
+        else
+            self:Notify("Failed to load config: " .. name)
+        end
+    end)
+
+    -- Attach Option
+    function groupbox:AddInput(idx, info)
+        local input = self:AddInput(idx, info)
+        self.Library.Options[idx] = input
+        return input
+    end
+end
+
+-- Update existing elements to track in Options/Toggles (minimal integration due to existing structure)
+-- Note: Full integration would require modifying all element creation to register with Library.Options/Toggles
+
 -- UI Library for KeyForge
 -- This library provides a modular UI system for creating windows, tabs, sections, and various GUI elements in Roblox.
 -- It has been refactored from the KeyForge hub script to be a reusable library, making script development easier by providing pre-built UI components.
+-- Enhanced with ThemeManager and SaveManager for themes and configurations.
 
 -- Usage Example:
 -- local Library = loadstring(game:HttpGet("https://path/to/library"))()  -- or require your module
