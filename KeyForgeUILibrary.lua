@@ -337,7 +337,7 @@ do
             TitleLabel.TextColor3 = Library.Scheme.FontColor
             TitleLabel.TextSize = 14
             TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-            TitleLabel.Font = Library.Scheme.Font
+            TitleLabel.Font = Enum.Font.Gotham
             TitleLabel.Parent = Holder
         end
 
@@ -351,7 +351,7 @@ do
             DescriptionLabel.TextWrapped = true
             DescriptionLabel.TextXAlignment = Enum.TextXAlignment.Left
             DescriptionLabel.TextYAlignment = Enum.TextYAlignment.Top
-            DescriptionLabel.Font = Library.Scheme.Font
+            DescriptionLabel.Font = Enum.Font.Gotham
             DescriptionLabel.Parent = Holder
 
             -- Resize based on text
