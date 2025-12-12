@@ -355,12 +355,13 @@ do
             DescriptionLabel.Parent = Holder
 
             -- Resize based on text
-            local textBounds = TextService:GetTextBoundsAsync({
-                Text = Data.Description,
-                Font = Library.Scheme.Font,
-                Size = 13,
-                Width = 300 - 16
-            })
+            local textParams = Instance.new("GetTextBoundsParams")
+            textParams.Text = Data.Description
+            textParams.Font = Font.fromEnum(Enum.Font.Gotham)
+            textParams.Size = 13
+            textParams.Width = 300 - 16
+            
+            local textBounds = TextService:GetTextBoundsAsync(textParams)
             DescriptionLabel.Size = UDim2.new(1, 0, 0, textBounds.Y)
         end
 
