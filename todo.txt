@@ -1,4 +1,0 @@
-- [ ] Remove buildAimTab function
-- [ ] Remove Aim tab from autorun tabs list
-- [ ] Remove coin farming section from buildMiscTab
-- [ ] Fix Kill All Innocents functionality to properly target innocents only

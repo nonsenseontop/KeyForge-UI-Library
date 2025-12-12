@@ -19,7 +19,7 @@ A comprehensive, production-ready UI library for Roblox scripts featuring deep t
 Load the library in your script:
 
 ```lua
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_USERNAME/REPO_NAME/main/KFHubSource%20-%20Copy.lua"))()
+local Library = loadstring(game:HttpGet"https://raw.githubusercontent.com/nonsenseontop/KeyForge-UI-Library/master/KeyForgeUILibrary.lua"))()
 ```
 
 Or require it as a module:
