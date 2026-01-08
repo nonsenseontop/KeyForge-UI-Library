@@ -143,9 +143,19 @@ local forcedMobilePreference = rawget(sharedKeyForgeEnv, "__KF_FORCE_MOBILE")
 local mouse = player:GetMouse()
 local viewPortSize = workspace.CurrentCamera.ViewportSize
 local isMobileClient = forcedMobilePreference
+
 if isMobileClient == nil then
-	local touchOnly = UserInputService.TouchEnabled
-	isMobileClient = touchOnly and not GuiService:IsTenFootInterface()
+    local hasTouch = UserInputService.TouchEnabled
+    local hasKeyboard = UserInputService.KeyboardEnabled
+    local hasMouse = UserInputService.MouseEnabled
+    local hasAccelerometer = UserInputService.AccelerometerEnabled
+    local isConsole = GuiService:IsTenFootInterface()
+    
+    -- Advanced detection logic:
+    -- 1. Accelerometer is a strong indicator of a mobile/tablet device.
+    -- 2. If it has touch but NO keyboard and NO mouse, it's definitely mobile.
+    -- 3. Explicitly exclude console interfaces.
+    isMobileClient = not isConsole and (hasAccelerometer or (hasTouch and not hasKeyboard and not hasMouse))
 end
 
 local originalElements = {}
@@ -188,10 +198,18 @@ Library.Options = {}
 Library.Toggles = {}
 
 -- Enhanced registry system for dynamic theme updates
-Library.ElementRegistry = {}
+Library.ThemeRegistry = {}
 
-function Library:RegisterElementType(elementType, updateFunction)
-    self.ElementRegistry[elementType] = updateFunction
+function Library:AddToRegistry(instance, property, themeKey)
+    table.insert(self.ThemeRegistry, {
+        Instance = instance,
+        Property = property,
+        ThemeKey = themeKey
+    })
+    
+    if self.Scheme[themeKey] then
+        instance[property] = self.Scheme[themeKey]
+    end
 end
 
 -- Helper function to register elements for saving/loading
@@ -237,8 +255,18 @@ Library.NotifySide = "Right"
 Library.DPIScale = 1
 
 -- Helper functions for theming
-Library.UpdateColorsUsingRegistry = function()
-    -- This will be implemented when updating element creation
+function Library:UpdateColorsUsingRegistry()
+    for i = #self.ThemeRegistry, 1, -1 do
+        local entry = self.ThemeRegistry[i]
+        if entry.Instance and entry.Instance.Parent then
+            local color = self.Scheme[entry.ThemeKey]
+            if color then
+                entry.Instance[entry.Property] = color
+            end
+        else
+            table.remove(self.ThemeRegistry, i)
+        end
+    end
 end
 
 function Library:SetFont(fontName)
@@ -246,174 +274,151 @@ function Library:SetFont(fontName)
     Library.Scheme.Font = Font.fromEnum(Enum.Font[fontName] or Enum.Font.Code)
 end
 
--- Enhanced notification system
+-- Enhanced notification system (Modernized)
 do
-    -- Create notification area when first window is created
+    local NotificationStyles = {
+        Default = {
+            TitleColor = Color3.fromRGB(255, 255, 255),
+            ContentColor = Color3.fromRGB(240, 240, 240),
+            BackgroundColor = Color3.fromRGB(30, 30, 40)
+        }
+    }
+
     function Library:InitNotifications()
         if Library.NotificationArea then return end
 
-        Library.NotificationArea = Instance.new("Frame")
-        Library.NotificationArea.Name = "NotificationArea"
-        Library.NotificationArea.AnchorPoint = Vector2.new(1, 0)
-        Library.NotificationArea.BackgroundTransparency = 1
-        Library.NotificationArea.Position = UDim2.new(1, -6, 0, 6)
-        Library.NotificationArea.Size = UDim2.new(0, 300, 1, -6)
-        Library.NotificationArea.ZIndex = 999
+        Library.NotificationArea = Instance.new("ScreenGui")
+        Library.NotificationArea.Name = "KeyForge_Notifications"
         Library.NotificationArea.Parent = game:GetService("CoreGui")
-
-        Library.NotificationList = Instance.new("UIListLayout")
-        Library.NotificationList.FillDirection = Enum.FillDirection.Vertical
-        Library.NotificationList.HorizontalAlignment = Enum.HorizontalAlignment.Right
-        Library.NotificationList.VerticalAlignment = Enum.VerticalAlignment.Bottom
-        Library.NotificationList.Padding = UDim.new(0, 6)
-        Library.NotificationList.Parent = Library.NotificationArea
-    end
-
-    function Library:Notify(...)
-        -- Initialize notifications if not done yet
-        self:InitNotifications()
-
-        local Data = {}
-        local Info = select(1, ...)
-
-        if typeof(Info) == "table" then
-            Data.Title = tostring(Info.Title)
-            Data.Description = tostring(Info.Description)
-            Data.Time = Info.Time or 3
-        else
-            Data.Description = tostring(Info)
-            Data.Time = select(2, ...) or 3
-        end
-        Data.Destroyed = false
-
-        -- Create notification frame
-        local FakeBackground = Instance.new("Frame")
-        FakeBackground.Name = "NotificationBackground"
-        FakeBackground.AutomaticSize = Enum.AutomaticSize.Y
-        FakeBackground.BackgroundTransparency = 1
-        FakeBackground.Size = UDim2.fromScale(1, 0)
-        FakeBackground.ZIndex = 1000
-        FakeBackground.Parent = Library.NotificationArea
-
-        local Background = Library:MakeOutline(FakeBackground, 4)
-        Background.AutomaticSize = Enum.AutomaticSize.Y
-        Background.Position = Library.NotifySide:lower() == "left" and UDim2.new(-1, -6, 0, -2) or UDim2.new(1, 6, 0, -2)
-        Background.Size = UDim2.fromScale(1, 0)
-        Library:UpdateDPI(Background, {Position = false, Size = false})
+        Library.NotificationArea.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
         local Holder = Instance.new("Frame")
         Holder.Name = "Holder"
-        Holder.BackgroundColor3 = Library.Scheme.BackgroundColor
-        Holder.Position = UDim2.fromOffset(2, 2)
-        Holder.Size = UDim2.new(1, -4, 1, -4)
-        Holder.Parent = Background
-
-        local UICorner = Instance.new("UICorner")
-        UICorner.CornerRadius = UDim.new(0, 3)
-        UICorner.Parent = Holder
+        Holder.Position = UDim2.new(1, -30, 1, -30)
+        Holder.Size = UDim2.new(0, 310, 1, -30)
+        Holder.AnchorPoint = Vector2.new(1, 1)
+        Holder.BackgroundTransparency = 1
+        Holder.Parent = Library.NotificationArea
 
         local UIListLayout = Instance.new("UIListLayout")
-        UIListLayout.FillDirection = Enum.FillDirection.Vertical
-        UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-        UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-        UIListLayout.Padding = UDim.new(0, 4)
+        UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+        UIListLayout.Padding = UDim.new(0, 10)
         UIListLayout.Parent = Holder
 
-        local UIPadding = Instance.new("UIPadding")
-        UIPadding.PaddingBottom = UDim.new(0, 8)
-        UIPadding.PaddingLeft = UDim.new(0, 8)
-        UIPadding.PaddingRight = UDim.new(0, 8)
-        UIPadding.PaddingTop = UDim.new(0, 8)
-        UIPadding.Parent = Holder
+        Library.NotificationHolder = Holder
+    end
 
-        local TitleLabel
-        local DescriptionLabel
+    function Library:Notify(Config)
+        self:InitNotifications()
 
-        if Data.Title then
-            TitleLabel = Instance.new("TextLabel")
-            TitleLabel.BackgroundTransparency = 1
-            TitleLabel.Size = UDim2.new(1, 0, 0, 14)
-            TitleLabel.Text = Data.Title
-            TitleLabel.TextColor3 = Library.Scheme.FontColor
-            TitleLabel.TextSize = 14
-            TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-            TitleLabel.Font = Enum.Font.Gotham
-            TitleLabel.Parent = Holder
+        if typeof(Config) == "string" then
+            Config = {
+                Title = "Notification",
+                Content = Config,
+                Duration = 3
+            }
         end
 
-        if Data.Description then
-            DescriptionLabel = Instance.new("TextLabel")
-            DescriptionLabel.BackgroundTransparency = 1
-            DescriptionLabel.Size = UDim2.new(1, 0, 0, 0)
-            DescriptionLabel.Text = Data.Description
-            DescriptionLabel.TextColor3 = Library.Scheme.FontColor
-            DescriptionLabel.TextSize = 13
-            DescriptionLabel.TextWrapped = true
-            DescriptionLabel.TextXAlignment = Enum.TextXAlignment.Left
-            DescriptionLabel.TextYAlignment = Enum.TextYAlignment.Top
-            DescriptionLabel.Font = Enum.Font.Gotham
-            DescriptionLabel.Parent = Holder
+        local Title = Config.Title or "Title"
+        local Content = Config.Content or Config.Description or "Content"
+        local Duration = Config.Duration or Config.Time or 5
 
-            -- Resize based on text
-            local textParams = Instance.new("GetTextBoundsParams")
-            textParams.Text = Data.Description
-            textParams.Font = Font.fromEnum(Enum.Font.Gotham)
-            textParams.Size = 13
-            textParams.Width = 300 - 16
-            
-            local textBounds = TextService:GetTextBoundsAsync(textParams)
-            DescriptionLabel.Size = UDim2.new(1, 0, 0, textBounds.Y)
-        end
-
-        -- Resize function
-        local function ResizeNotification()
-            FakeBackground.Size = UDim2.fromOffset(300, UIListLayout.AbsoluteContentSize.Y + 20)
-            Library:UpdateDPI(FakeBackground, {Size = UDim2.fromOffset(300, UIListLayout.AbsoluteContentSize.Y + 20)})
-        end
-
-        local NotificationData = {
-            Title = Data.Title,
-            Description = Data.Description,
-            Time = Data.Time,
-            Destroyed = false,
-
-            Background = FakeBackground,
-            AnimatingBackground = Background,
-
-            Destroy = function(self)
-                if self.Destroyed then return end
-                self.Destroyed = true
-
-                -- Animate out
-                TweenService:Create(Background, TweenInfo.new(0.25), {
-                    Position = Library.NotifySide:lower() == "left" and UDim2.new(-1, -6, 0, -2) or UDim2.new(1, 6, 0, -2)
-                }):Play()
-
-                task.wait(0.25)
-                Library.Notifications[FakeBackground] = nil
-                FakeBackground:Destroy()
-            end
+        local NewNotification = {
+            Closed = false,
         }
 
-        Library.Notifications[FakeBackground] = NotificationData
+        local Root = Instance.new("Frame")
+        Root.Name = "Notification"
+        Root.BackgroundColor3 = Library.Scheme.BackgroundColor
+        Root.BackgroundTransparency = 0.1
+        Root.BorderSizePixel = 0
+        Root.Size = UDim2.new(1, 0, 0, 80) -- Initial size, will auto-adjust
+        Root.ClipsDescendants = true
+        Root.Parent = Library.NotificationHolder
 
-        ResizeNotification()
-        FakeBackground.Visible = true
+        local UICorner = Instance.new("UICorner")
+        UICorner.CornerRadius = UDim.new(0, 6)
+        UICorner.Parent = Root
 
-        -- Animate in
-        TweenService:Create(Background, TweenInfo.new(0.25), {
-            Position = UDim2.fromOffset(-2, -2)
-        }):Play()
+        local UIStroke = Instance.new("UIStroke")
+        UIStroke.Color = Library.Scheme.OutlineColor
+        UIStroke.Thickness = 1
+        UIStroke.Transparency = 0.5
+        UIStroke.Parent = Root
 
-        -- Auto destroy
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Name = "Title"
+        TitleLabel.Position = UDim2.new(0, 14, 0, 12)
+        TitleLabel.Size = UDim2.new(1, -40, 0, 15)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Font = Enum.Font.GothamBold
+        TitleLabel.Text = Title
+        TitleLabel.TextColor3 = Library.Scheme.AccentColor
+        TitleLabel.TextSize = 13
+        TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+        TitleLabel.Parent = Root
+
+        local ContentLabel = Instance.new("TextLabel")
+        ContentLabel.Name = "Content"
+        ContentLabel.Position = UDim2.new(0, 14, 0, 32)
+        ContentLabel.Size = UDim2.new(1, -28, 0, 0)
+        ContentLabel.BackgroundTransparency = 1
+        ContentLabel.Font = Enum.Font.Gotham
+        ContentLabel.Text = Content
+        ContentLabel.TextColor3 = Library.Scheme.FontColor
+        ContentLabel.TextSize = 14
+        ContentLabel.TextWrapped = true
+        ContentLabel.TextXAlignment = Enum.TextXAlignment.Left
+        ContentLabel.TextYAlignment = Enum.TextYAlignment.Top
+        ContentLabel.AutomaticSize = Enum.AutomaticSize.Y
+        ContentLabel.Parent = Root
+
+        -- Adjust root size based on content
         task.spawn(function()
-            task.wait(Data.Time)
-            if not NotificationData.Destroyed then
-                NotificationData:Destroy()
-            end
+            task.wait()
+            local contentSize = ContentLabel.AbsoluteSize.Y
+            Root.Size = UDim2.new(1, 0, 0, 45 + contentSize)
         end)
 
-        return NotificationData
+        local CloseButton = Instance.new("TextButton")
+        CloseButton.Name = "Close"
+        CloseButton.BackgroundTransparency = 1
+        CloseButton.Position = UDim2.new(1, -25, 0, 10)
+        CloseButton.Size = UDim2.new(0, 15, 0, 15)
+        CloseButton.Font = Enum.Font.GothamBold
+        CloseButton.Text = "X"
+        CloseButton.TextColor3 = Library.Scheme.FontColor
+        CloseButton.TextSize = 12
+        CloseButton.Parent = Root
+
+        -- Animation
+        Root.Position = UDim2.new(1, 350, 0, 0)
+        TweenService:Create(Root, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Position = UDim2.new(0, 0, 0, 0)
+        }):Play()
+
+        local function Close()
+            if NewNotification.Closed then return end
+            NewNotification.Closed = true
+            
+            local OutTween = TweenService:Create(Root, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+                Position = UDim2.new(1, 350, 0, 0)
+            })
+            OutTween:Play()
+            OutTween.Completed:Connect(function()
+                Root:Destroy()
+            end)
+        end
+
+        CloseButton.MouseButton1Click:Connect(Close)
+
+        if Duration then
+            task.delay(Duration, Close)
+        end
+
+        return NewNotification
     end
 end
 
@@ -585,6 +590,7 @@ function Library:AddTooltip(infoStr, disabledInfoStr, hoverInstance)
     return TooltipTable
 end
 
+colorWheelHandler.__index = function(_, i) return rawget(colorWheelHandler, i) or rawget(elementHandler, i) end
 elementHandler.__index = elementHandler
 windowHandler.__index = function(_, i) return rawget(windowHandler, i) or rawget(elementHandler, i) end
 tabHandler.__index = function(_, i ) return rawget(tabHandler, i) or rawget(elementHandler, i) end
@@ -598,7 +604,70 @@ sliderHandler.__index = function(_, i) return rawget(sliderHandler, i) or rawget
 searchBarHandler.__index = function(_, i) return rawget(searchBarHandler, i) or rawget(elementHandler, i) end
 keybindHandler.__index = function(_, i) return rawget(keybindHandler, i) or rawget(elementHandler, i) end
 textBoxHandler.__index = function(_, i) return rawget(textBoxHandler, i) or rawget(elementHandler, i) end
-colorWheelHandler.__index = function(_, i) return rawget(colorWheelHandler, i) or rawget(elementHandler, i) end
+
+-- Compatibility Layer for Linoria/Fluent style managers
+function tabHandler:AddRightGroupbox(name) return self:Section(name) end
+function tabHandler:AddLeftGroupbox(name) return self:Section(name) end
+function tabHandler:AddSection(name) return self:Section(name) end
+
+function elementHandler:AddLabel(text) return self:Label(text) end
+function elementHandler:AddButton(name, cb) return self:Button(name, cb) end
+
+function elementHandler:AddToggle(idx, info)
+    local default = info.Default or false
+    local cb = info.Callback or info.OnChanged or function() end
+    local t = self:Toggle(info.Text or idx, default, cb)
+    t.OnChanged = function(s, f) t.Callback = f end
+    t.GetValue = function(s) return t.Enabled end
+    t.SetValue = function(s, v) t:Set(v) end
+    if Library.RegisterToggle then Library:RegisterToggle(t, idx, default) end
+    return t
+end
+
+function elementHandler:AddSlider(idx, info)
+    local min = info.Min or 0
+    local max = info.Max or 100
+    local default = info.Default or min
+    local s = self:Slider(info.Text or idx, info.Callback or info.OnChanged, max, min)
+    s:Set(default)
+    s.OnChanged = function(self_s, f) s.Callback = f end
+    s.GetValue = function(s) return s.Value end
+    s.SetValue = function(s, v) s:Set(v) end
+    if Library.RegisterOption then Library:RegisterOption(s, idx, "Slider", default) end
+    return s
+end
+
+function elementHandler:AddDropdown(idx, info)
+    local list = info.Values or info.List or {}
+    local default = info.Default or list[1]
+    local d = self:Dropdown(info.Text or idx, list, default, info.Callback or info.OnChanged)
+    d.OnChanged = function(s, f) d.Callback = f end
+    d.GetValue = function(s) return d.SelectedValue end
+    d.SetValue = function(s, v) d:Select(v) end
+    if Library.RegisterOption then Library:RegisterOption(d, idx, "Dropdown", default) end
+    return d
+end
+
+function elementHandler:AddColorPicker(idx, info)
+    local default = info.Default or Color3.new(1, 1, 1)
+    local cp = self:ColorWheel(info.Text or idx, default, info.Callback or info.OnChanged)
+    cp.OnChanged = function(s, f) cp.Callback = f end
+    cp.GetValue = function(s) return cp.Instance.WheelHolder.ValueHolder.ColorSample.BackgroundColor3 end -- Crude but works
+    cp.SetValue = function(s, v) cp:Set(v) end
+    cp.SetValueRGB = function(s, v) cp:Set(v) end
+    if Library.RegisterOption then Library:RegisterOption(cp, idx, "ColorPicker", default) end
+    return cp
+end
+
+function elementHandler:AddInput(idx, info)
+    local default = info.Default or ""
+    local tb = self:TextBox(info.Text or idx, info.Callback or info.OnChanged)
+    tb.OnChanged = function(s, f) tb.Callback = f end
+    tb.GetValue = function(s) return tb.Instance.BoxBackground.InnerBox.TextBoxText.Text end
+    tb.SetValue = function(s, v) tb.Instance.BoxBackground.InnerBox.TextBoxText.Text = v end
+    if Library.RegisterOption then Library:RegisterOption(tb, idx, "Input", default) end
+    return tb
+end
 
 local function deepCopy(tbl)
 	if typeof(tbl) ~= "table" then
@@ -648,216 +717,8 @@ local exploitEnv = getfenv and getfenv() or _G
 
 --! Enhanced Config Manager with Advanced Features
 
-local ConfigManager = {}
-local CONFIG_FOLDER = "KeyForgeConfigs"
-local CONFIG_EXTENSION = ".json"
-local DEFAULT_CONFIG_NAME = "default"
+-- ConfigManager removed in favor of SaveManager
 
--- Advanced config features
-local ConfigFeatures = {
-    AutoSave = true,
-    AutoSaveInterval = 30, -- seconds
-    BackupConfigs = true,
-    MaxBackups = 5,
-    EncryptionEnabled = false,
-    ConfigVersion = "1.0"
-}
-
-local function filesystemAvailable()
-	return exploitEnv and exploitEnv.isfolder and exploitEnv.makefolder and exploitEnv.writefile and exploitEnv.readfile and exploitEnv.listfiles and exploitEnv.isfile and exploitEnv.delfile
-end
-
-local function ensureConfigFolder()
-	if not filesystemAvailable() then
-		return false
-	end
-	if not exploitEnv.isfolder(CONFIG_FOLDER) then
-		exploitEnv.makefolder(CONFIG_FOLDER)
-	end
-	return true
-end
-
-local function sanitizeConfigName(name)
-	local cleaned = trimString(tostring(name or "")):gsub("[^%w%._%-%s]", "")
-	cleaned = cleaned:gsub("%s+", "_")
-	return cleaned
-end
-
-local function getConfigPath(name)
-	return string.format("%s/%s%s", CONFIG_FOLDER, name, CONFIG_EXTENSION)
-end
-
-local function serializeValue(value)
-	local valueType = typeof(value)
-	if valueType == "Color3" then
-		return {__type = "Color3", R = value.R, G = value.G, B = value.B}
-	elseif valueType == "ColorSequence" then
-		local serializedKeypoints = {}
-		for _, keypoint in ipairs(value.Keypoints) do
-			table.insert(serializedKeypoints, {
-				Time = keypoint.Time,
-				Value = serializeValue(keypoint.Value)
-			})
-		end
-		return {__type = "ColorSequence", Keypoints = serializedKeypoints}
-	elseif valueType == "table" then
-		local result = {}
-		for k, v in pairs(value) do
-			result[k] = serializeValue(v)
-		end
-		return result
-	end
-	return value
-end
-
-local function deserializeValue(value)
-	if typeof(value) ~= "table" then
-		return value
-	end
-	local valueType = rawget(value, "__type")
-	if valueType == "Color3" then
-		return Color3.new(value.R or 0, value.G or 0, value.B or 0)
-	elseif valueType == "ColorSequence" then
-		local keypoints = {}
-		for _, keypoint in ipairs(value.Keypoints or {}) do
-			local color = deserializeValue(keypoint.Value)
-			table.insert(keypoints, ColorSequenceKeypoint.new(keypoint.Time or 0, color))
-		end
-		return ColorSequence.new(keypoints)
-	end
-	local result = {}
-	for k, v in pairs(value) do
-		if k ~= "__type" then
-			result[k] = deserializeValue(v)
-		end
-	end
-	return result
-end
-
-local runtimeConfigData = {}
-
-local function exportRuntimeConfig()
-	return deepCopy(runtimeConfigData)
-end
-
-local function applyRuntimeConfig(snapshot)
-	if typeof(snapshot) ~= "table" then
-		return
-	end
-	runtimeConfigData = deepCopy(snapshot)
-end
-
-function ConfigManager:GetRuntimeConfig()
-	return deepCopy(runtimeConfigData)
-end
-
-function ConfigManager:SetRuntimeConfig(data)
-	if typeof(data) ~= "table" then
-		return
-	end
-	runtimeConfigData = deepCopy(data)
-end
-
-function ConfigManager:IsReady()
-	return filesystemAvailable()
-end
-
-function ConfigManager:GetConfigs()
-	if not filesystemAvailable() then
-		return {}
-	end
-	ensureConfigFolder()
-	local configs = {}
-	local files = exploitEnv.listfiles(CONFIG_FOLDER)
-	if typeof(files) == "table" then
-		for _, path in ipairs(files) do
-			local name = path:match("([^/\\]+)%.json$")
-			if name then
-				table.insert(configs, name)
-			end
-		end
-	end
-	table.sort(configs, function(a, b)
-		return a:lower() < b:lower()
-	end)
-	return configs
-end
-
-function ConfigManager:Save(name)
-	if not filesystemAvailable() then
-		return false, "File functions unavailable"
-	end
-	local sanitized = sanitizeConfigName(name)
-	if sanitized == "" then
-		return false, "Enter a config name"
-	end
-	if not ensureConfigFolder() then
-		return false, "Unable to create config folder"
-	end
-	local payload = {
-		data = exportRuntimeConfig(),
-		metadata = {
-			version = ConfigFeatures.ConfigVersion,
-			created = os.time(),
-			name = sanitized
-		}
-	}
-	local encodedPayload = HttpService:JSONEncode(serializeValue(payload))
-	exploitEnv.writefile(getConfigPath(sanitized), encodedPayload)
-	return true, sanitized
-end
-
-function ConfigManager:Load(name)
-	if not filesystemAvailable() then
-		return false, "File functions unavailable"
-	end
-	local sanitized = sanitizeConfigName(name)
-	if sanitized == "" then
-		return false, "Enter a config name"
-	end
-	local path = getConfigPath(sanitized)
-	if not exploitEnv.isfile or not exploitEnv.isfile(path) then
-		return false, "Config does not exist"
-	end
-	local success, contents = pcall(exploitEnv.readfile, path)
-	if not success then
-		return false, "Failed to read config"
-	end
-	local ok, decoded = pcall(function()
-		return HttpService:JSONDecode(contents)
-	end)
-	if not ok or typeof(decoded) ~= "table" then
-		return false, "Invalid config data"
-	end
-	local data = deserializeValue(decoded)
-	if typeof(data.data) == "table" then
-		applyRuntimeConfig(data.data)
-	else
-		applyRuntimeConfig({})
-	end
-	return true, sanitized
-end
-
-function ConfigManager:Delete(name)
-	if not filesystemAvailable() then
-		return false, "File functions unavailable"
-	end
-	local sanitized = sanitizeConfigName(name)
-	if sanitized == "" then
-		return false, "Enter a config name"
-	end
-	local path = getConfigPath(sanitized)
-	if exploitEnv.isfile and not exploitEnv.isfile(path) then
-		return false, "Config does not exist"
-	end
-	local success, err = pcall(function()
-		exploitEnv.delfile(path)
-	end)
-	if not success then
-		return false, err or "Failed to delete config"
-	end
-	return true, sanitized
-end
 
 local function animateText(textInstance: Instance, animationSpeed: number, text: string, placeholderText: string?, fillPlaceHolder: boolean?, emptyPlaceHolderText: boolean?): nil
 	if emptyPlaceHolderText then
@@ -1054,7 +915,7 @@ local function createOriginalElements()
 		background.Name = "Background"
 		background.Parent = screenGui
 		background.AnchorPoint = Vector2.new(0.5, 0.5)
-		background.BackgroundColor3 = Color3.fromRGB(24, 25, 32)
+		Library:AddToRegistry(background, "BackgroundColor3", "BackgroundColor")
 		background.BorderSizePixel = 0
 		background.ClipsDescendants = true
 		background.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -1072,7 +933,7 @@ local function createOriginalElements()
 		
 		heading.Name = "Heading"
 		heading.Parent = background
-		heading.BackgroundColor3 = Color3.fromRGB(40, 41, 52)
+		Library:AddToRegistry(heading, "BackgroundColor3", "MainColor")
 		heading.BorderSizePixel = 0
 		heading.Size = UDim2.new(1, 0, 0.0500000007, 0)
 		heading.AutoButtonColor = false
@@ -1151,7 +1012,7 @@ local function createOriginalElements()
 		headingCornerHiding.Name = "HeadingCornerHiding"
 		headingCornerHiding.Parent = heading
 		headingCornerHiding.AnchorPoint = Vector2.new(0, 1)
-		headingCornerHiding.BackgroundColor3 = Color3.fromRGB(40, 41, 52)
+		Library:AddToRegistry(headingCornerHiding, "BackgroundColor3", "MainColor")
 		headingCornerHiding.BorderSizePixel = 0
 		headingCornerHiding.Position = UDim2.new(0, 0, 1, 0)
 		headingCornerHiding.Size = UDim2.new(1, 0, 0.25, 0)
@@ -1159,7 +1020,7 @@ local function createOriginalElements()
 		headingSeperator.Name = "HeadingSeperator"
 		headingSeperator.Parent = heading
 		headingSeperator.AnchorPoint = Vector2.new(0, 1)
-		headingSeperator.BackgroundColor3 = Color3.fromRGB(131, 39, 45)
+		Library:AddToRegistry(headingSeperator, "BackgroundColor3", "AccentColor")
 		headingSeperator.BorderSizePixel = 0
 		headingSeperator.Position = UDim2.new(0, 0, 1, 0)
 		headingSeperator.Size = UDim2.new(1, 0, 0.100000001, 0)
@@ -1172,7 +1033,7 @@ local function createOriginalElements()
 		title.Font = Enum.Font.GothamBold
 		title.LineHeight = 0.800
 		title.Text = "KeyForge"
-		title.TextColor3 = Color3.fromRGB(168, 168, 168)
+		Library:AddToRegistry(title, "TextColor3", "FontColor")
 		title.TextSize = 14.000
 		title.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -1192,7 +1053,7 @@ local function createOriginalElements()
 		tabs.Parent = holder
 		tabs.Active = true
 		tabs.AnchorPoint = Vector2.new(0, 1)
-		tabs.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(tabs, "BackgroundColor3", "MainColor")
 		tabs.BorderSizePixel = 0
 		tabs.Position = UDim2.new(0, 5, 1, -5)
 		tabs.Size = UDim2.new(0.225, 0, 1, -15)
@@ -1244,7 +1105,7 @@ local function createOriginalElements()
 		tabText.Size = UDim2.new(0.964999974, -30, 1, 0)
 		tabText.Font = Enum.Font.SourceSans
 		tabText.Text = "N/A"
-		tabText.TextColor3 = Color3.fromRGB(109, 110, 119)
+		Library:AddToRegistry(tabText, "TextColor3", "FontColor")
 		tabText.TextSize = 18.000
 		tabText.TextXAlignment = Enum.TextXAlignment.Left
 		tabText.ClipsDescendants = true
@@ -1266,7 +1127,7 @@ local function createOriginalElements()
 
 		tabSeperator.Name = "TabSeperator"
 		tabSeperator.Parent = tab
-		tabSeperator.BackgroundColor3 = Color3.fromRGB(255, 6, 4)
+		Library:AddToRegistry(tabSeperator, "BackgroundColor3", "AccentColor")
 		tabSeperator.BackgroundTransparency = 0
 		tabSeperator.BorderColor3 = Color3.fromRGB(27, 42, 53)
 		tabSeperator.BorderSizePixel = 0
@@ -1288,7 +1149,7 @@ local function createOriginalElements()
 
 		page.Name = "Page"
 		page.AnchorPoint = Vector2.new(1, 1)
-		page.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(page, "BackgroundColor3", "MainColor")
 		page.BackgroundTransparency = 1.000
 		page.BorderSizePixel = 0
 		page.Position = UDim2.new(1, -10, 1, -5)
@@ -1297,7 +1158,7 @@ local function createOriginalElements()
 
 		leftScrollingFrame.Name = "LeftScrollingFrame"
 		leftScrollingFrame.Active = true
-		leftScrollingFrame.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(leftScrollingFrame, "BackgroundColor3", "MainColor")
 		leftScrollingFrame.BackgroundTransparency = 1.000
 		leftScrollingFrame.Size = UDim2.new(0.5, -5, 1, 0)
 		leftScrollingFrame.ScrollBarThickness = 0
@@ -1312,7 +1173,7 @@ local function createOriginalElements()
 		rightScrollingFrame.Name = "RightScrollingFrame"
 		rightScrollingFrame.Active = true
 		rightScrollingFrame.AnchorPoint = Vector2.new(1, 0)
-		rightScrollingFrame.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(rightScrollingFrame, "BackgroundColor3", "MainColor")
 		rightScrollingFrame.BackgroundTransparency = 1.000
 		rightScrollingFrame.Position = UDim2.new(1, 0, 0, 0)
 		rightScrollingFrame.Size = UDim2.new(0.5, -5, 1, 0)
@@ -1341,21 +1202,21 @@ local function createOriginalElements()
 		local elementHolderPadding = Instance.new("UIPadding")
 
 		section.Name = "Section"
-		section.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(section, "BackgroundColor3", "MainColor")
 		section.BorderSizePixel = 0
 		section.Size = UDim2.new(1, 0, 0, 200)
 		section.ClipsDescendants = true
 
 		heading.Name = "Heading"
 		heading.Parent = section
-		heading.BackgroundColor3 = Color3.fromRGB(40, 41, 52)
+		Library:AddToRegistry(heading, "BackgroundColor3", "MainColor")
 		heading.BorderSizePixel = 0
 		heading.Size = UDim2.new(1, 0, 0, 22)
 
 		headingSeperator.Name = "HeadingSeperator"
 		headingSeperator.Parent = heading
 		headingSeperator.AnchorPoint = Vector2.new(0, 1)
-		headingSeperator.BackgroundColor3 = Color3.fromRGB(163, 33, 38)
+		Library:AddToRegistry(headingSeperator, "BackgroundColor3", "AccentColor")
 		headingSeperator.BorderSizePixel = 0
 		headingSeperator.Position = UDim2.new(0, 0, 1, 0)
 		headingSeperator.Size = UDim2.new(1, 0, 0, 2)
@@ -1367,7 +1228,7 @@ local function createOriginalElements()
 		title.Size = UDim2.new(1, -20, 0, 20)
 		title.Font = Enum.Font.GothamMedium
 		title.Text = "N/A"
-		title.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(title, "TextColor3", "FontColor")
 		title.TextSize = 14.000
 		title.TextXAlignment = Enum.TextXAlignment.Left
 		title.ClipsDescendants = true
@@ -1427,13 +1288,13 @@ local function createOriginalElements()
 		titleText.Name = "TitleText"
 		titleText.Parent = title
 		titleText.AnchorPoint = Vector2.new(0.5, 0)
-		titleText.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(titleText, "BackgroundColor3", "MainColor")
 		titleText.BorderSizePixel = 0
 		titleText.Position = UDim2.new(0.5, 0, 0, 0)
 		titleText.Size = UDim2.new(0.200000003, 0, 1, 0)
 		titleText.ZIndex = 2
 		titleText.Font = Enum.Font.GothamMedium
-		titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(titleText, "TextColor3", "FontColor")
 		titleText.Text = "N/A"
 		titleText.TextSize = 14.000
 
@@ -1461,7 +1322,7 @@ local function createOriginalElements()
 		local labelBackgroundPadding = Instance.new("UIPadding")
 
 		label.Name = "Label"
-		label.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(label, "BackgroundColor3", "OutlineColor")
 		label.BorderSizePixel = 0
 		label.Size = UDim2.new(1, 0, 0, 18)
 
@@ -1481,13 +1342,13 @@ local function createOriginalElements()
 		labelText.Name = "LabelText"
 		labelText.Parent = labelBackground
 		labelText.AnchorPoint = Vector2.new(0.5, 0)
-		labelText.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(labelText, "BackgroundColor3", "MainColor")
 		labelText.BorderSizePixel = 0
 		labelText.Position = UDim2.new(0.5, 0, 0, 0)
 		labelText.Size = UDim2.new(1, 0, 1, 0)
 		labelText.ZIndex = 2
 		labelText.Font = Enum.Font.GothamMedium
-		labelText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(labelText, "TextColor3", "FontColor")
 		labelText.TextSize = 14.000
 		labelText.TextWrapped = true
 		labelText.TextXAlignment = Enum.TextXAlignment.Left
@@ -1541,13 +1402,13 @@ local function createOriginalElements()
 		toggleText.Size = UDim2.new(1, -18, 1, 0)
 		toggleText.Font = Enum.Font.Gotham
 		toggleText.Text = "N/A"
-		toggleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(toggleText, "TextColor3", "FontColor")
 		toggleText.TextSize = 14.000
 		toggleText.TextXAlignment = Enum.TextXAlignment.Left
 
 		boxBackground.Name = "BoxBackground"
 		boxBackground.Parent = toggle
-		boxBackground.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(boxBackground, "BackgroundColor3", "OutlineColor")
 		boxBackground.BorderSizePixel = 0
 		boxBackground.Size = UDim2.new(1, 0, 1, 0)
 
@@ -1579,7 +1440,7 @@ local function createOriginalElements()
 		centerBox.Name = "CenterBox"
 		centerBox.Parent = innerBox
 		centerBox.AnchorPoint = Vector2.new(0.5, 0.5)
-		centerBox.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(centerBox, "BackgroundColor3", "MainColor")
 		centerBox.BorderSizePixel = 0
 		centerBox.Position = UDim2.new(0.5, 0, 0.5, 0)
 		centerBox.Size = UDim2.new(1, 0, 1, 0)
@@ -1587,12 +1448,12 @@ local function createOriginalElements()
 		toggleImage.Name = "ToggleImage"
 		toggleImage.Parent = centerBox
 		toggleImage.AnchorPoint = Vector2.new(0.5, 0.5)
-		toggleImage.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+		Library:AddToRegistry(toggleImage, "BackgroundColor3", "AccentColor")
 		toggleImage.BackgroundTransparency = 0
 		toggleImage.BorderSizePixel = 0
 		toggleImage.Position = UDim2.new(0.5, 0, 0.5, 0)
 		toggleImage.Image = "rbxassetid://11444348176"
-		toggleImage.ImageColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(toggleImage, "ImageColor3", "MainColor")
 		
 		toggleImageCorner.Name = "ToggleImageCorner"
 		toggleImageCorner.CornerRadius = UDim.new(.5,0)
@@ -1636,13 +1497,13 @@ local function createOriginalElements()
 		buttonText.Size = UDim2.new(1, -18, 1, 0)
 		buttonText.Font = Enum.Font.Gotham
 		buttonText.Text = "Button"
-		buttonText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(buttonText, "TextColor3", "FontColor")
 		buttonText.TextSize = 14.000
 		buttonText.TextXAlignment = Enum.TextXAlignment.Left
 
 		circleBackground.Name = "CircleBackground"
 		circleBackground.Parent = button
-		circleBackground.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(circleBackground, "BackgroundColor3", "OutlineColor")
 		circleBackground.BorderSizePixel = 0
 		circleBackground.Size = UDim2.new(1, 0, 1, 0)
 
@@ -1675,14 +1536,14 @@ local function createOriginalElements()
 		innerCirclePadding.Name = "InnerCirclePadding"
 		innerCirclePadding.Parent = innerCircle
 		innerCirclePadding.PaddingBottom = UDim.new(0, 1)
-		innerCirclePadding.PaddingLeft = UDim.new(0, 1)
-		innerCirclePadding.PaddingRight = UDim.new(0, 1)
-		innerCirclePadding.PaddingTop = UDim.new(0, 1)
+		innerBoxPadding.PaddingLeft = UDim.new(0, 1)
+		innerBoxPadding.PaddingRight = UDim.new(0, 1)
+		innerBoxPadding.PaddingTop = UDim.new(0, 1)
 
 		centerCircle.Name = "CenterCircle"
 		centerCircle.Parent = innerCircle
 		centerCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-		centerCircle.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(centerCircle, "BackgroundColor3", "MainColor")
 		centerCircle.BorderSizePixel = 0
 		centerCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
 		centerCircle.Size = UDim2.new(1, 0, 1, 0)
@@ -1702,7 +1563,7 @@ local function createOriginalElements()
 		buttonCircle.Parent = centerCircle
 		buttonCircle.AnchorPoint = Vector2.new(.5,.5)
 		buttonCircle.BorderSizePixel = 0
-		buttonCircle.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+		Library:AddToRegistry(buttonCircle, "BackgroundColor3", "AccentColor")
 		buttonCircle.Size = UDim2.new(0, 0, 0, 0)
 		buttonCircle.Position = UDim2.fromScale(.5,.5)
 
@@ -1741,7 +1602,7 @@ local function createOriginalElements()
 
 		dropdownButton.Name = "DropdownButton"
 		dropdownButton.Parent = dropdown
-		dropdownButton.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(dropdownButton, "BackgroundColor3", "OutlineColor")
 		dropdownButton.BorderSizePixel = 0
 		dropdownButton.Size = UDim2.new(1, 0, 0, 18)
 		dropdownButton.AutoButtonColor = false
@@ -1767,7 +1628,7 @@ local function createOriginalElements()
 		dropdownText.Size = UDim2.new(1, -17, 1, 0)
 		dropdownText.Font = Enum.Font.Gotham
 		dropdownText.Text = "N/A"
-		dropdownText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(dropdownText, "TextColor3", "FontColor")
 		dropdownText.TextScaled = false
 		dropdownText.TextSize = 14.000
 		dropdownText.TextWrapped = true
@@ -1800,7 +1661,7 @@ local function createOriginalElements()
 
 		buttonInnerBackground.Name = "ButtonInnerBackground"
 		buttonInnerBackground.Parent = buttonBackground
-		buttonInnerBackground.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(buttonInnerBackground, "BackgroundColor3", "MainColor")
 		buttonInnerBackground.BorderSizePixel = 0
 		buttonInnerBackground.Size = UDim2.new(1, 0, 1, 0)
 		buttonInnerBackground.ZIndex = 0
@@ -1815,7 +1676,7 @@ local function createOriginalElements()
 		elementHolder.Name = "ElementHolder"
 		elementHolder.Parent = dropdown
 		elementHolder.Active = true
-		elementHolder.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(elementHolder, "BackgroundColor3", "OutlineColor")
 		elementHolder.BorderSizePixel = 0
 		elementHolder.Position = UDim2.new(0, 0, 0, 18)
 		elementHolder.Size = UDim2.new(0.925000012, 0, 0, 0)
@@ -1830,7 +1691,7 @@ local function createOriginalElements()
 
 		elementHolderInnerBackground.Name = "ElementHolderInnerBackground"
 		elementHolderInnerBackground.Parent = elementHolderBackground
-		elementHolderInnerBackground.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(elementHolderInnerBackground, "BackgroundColor3", "MainColor")
 		elementHolderInnerBackground.BorderSizePixel = 0
 		elementHolderInnerBackground.Size = UDim2.new(1, 0, 1, 0)
 
@@ -1913,7 +1774,7 @@ local function createOriginalElements()
 		sliderText.BorderSizePixel = 0
 		sliderText.Font = Enum.Font.Gotham
 		sliderText.Text = "N/A"
-		sliderText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(sliderText, "TextColor3", "FontColor")
 		sliderText.TextSize = 14.000
 		sliderText.ClipsDescendants = true
 		sliderText.TextXAlignment = Enum.TextXAlignment.Left
@@ -1926,7 +1787,7 @@ local function createOriginalElements()
 		sliderBackground.Name = "SliderBackground"
 		sliderBackground.Parent = sliderElement
 		sliderBackground.AnchorPoint = Vector2.new(0, 1)
-		sliderBackground.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(sliderBackground, "BackgroundColor3", "OutlineColor")
 		sliderBackground.BorderSizePixel = 0
 		sliderBackground.Position = UDim2.new(0, 0, 1, 0)
 		sliderBackground.Size = UDim2.new(1, 0, 0.5, -2)
@@ -1953,14 +1814,14 @@ local function createOriginalElements()
 
 		emptySliderBackground.Name = "EmptySliderBackground"
 		emptySliderBackground.Parent = sliderInnerBackground
-		emptySliderBackground.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(emptySliderBackground, "BackgroundColor3", "MainColor")
 		emptySliderBackground.BorderSizePixel = 0
 		emptySliderBackground.Size = UDim2.new(1, 0, 1, 0)
 		emptySliderBackground.ZIndex = 0
 
 		slider.Name = "Slider"
 		slider.Parent = sliderInnerBackground
-		slider.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+		Library:AddToRegistry(slider, "BackgroundColor3", "AccentColor")
 		slider.BorderSizePixel = 0
 		slider.Size = UDim2.new(0, 2, 1, 0)
 
@@ -2002,7 +1863,7 @@ local function createOriginalElements()
 
 		searchBarFrame.Name = "SearchBarFrame"
 		searchBarFrame.Parent = searchBar
-		searchBarFrame.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(searchBarFrame, "BackgroundColor3", "OutlineColor")
 		searchBarFrame.BorderSizePixel = 0
 		searchBarFrame.Size = UDim2.new(1, 0, 0, 18)
 
@@ -2024,7 +1885,7 @@ local function createOriginalElements()
 		searchBox.Name = "SearchBox"
 		searchBox.Parent = buttonBackgroundPadding
 		searchBox.Active = false
-		searchBox.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(searchBox, "BackgroundColor3", "MainColor")
 		searchBox.BackgroundTransparency = 1
 		searchBox.BorderSizePixel = 0
 		searchBox.Size = UDim2.new(1, 0, 1, 0)
@@ -2032,7 +1893,7 @@ local function createOriginalElements()
 		searchBox.PlaceholderColor3 = Color3.fromRGB(139, 141, 147)
 		searchBox.PlaceholderText = "N/A"
 		searchBox.Text = ""
-		searchBox.TextColor3 = Color3.fromRGB(139, 141, 147)
+		Library:AddToRegistry(searchBox, "TextColor3", "FontColor")
 		searchBox.TextSize = 14.000
 		searchBox.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -2042,7 +1903,7 @@ local function createOriginalElements()
 		
 		searchBoxBackground.Name = "SearchBoxBackground"
 		searchBoxBackground.Parent = buttonBackgroundPadding
-		searchBoxBackground.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(searchBoxBackground, "BackgroundColor3", "MainColor")
 		searchBoxBackground.BorderSizePixel = 0
 		searchBoxBackground.Size = UDim2.new(1, 0, 1, 0)
 		searchBoxBackground.ZIndex = 0
@@ -2050,7 +1911,7 @@ local function createOriginalElements()
 		searchImage.Name = "SearchImage"
 		searchImage.Parent = buttonBackgroundPadding
 		searchImage.AnchorPoint = Vector2.new(1, 0.5)
-		searchImage.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(searchImage, "BackgroundColor3", "MainColor")
 		searchImage.BackgroundTransparency = 1
 		searchImage.BorderSizePixel = 0
 		searchImage.Position = UDim2.new(1, 0, 0.5, 0)
@@ -2070,7 +1931,7 @@ local function createOriginalElements()
 		elementHolder.Name = "ElementHolder"
 		elementHolder.Parent = searchBar
 		elementHolder.Active = true
-		elementHolder.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(elementHolder, "BackgroundColor3", "OutlineColor")
 		elementHolder.BorderSizePixel = 0
 		elementHolder.Position = UDim2.new(0, 0, 0, 18)
 		elementHolder.Size = UDim2.new(0.925000012, 0, 0, 0)
@@ -2085,7 +1946,7 @@ local function createOriginalElements()
 
 		elementHolderInnerBackground.Name = "ElementHolderInnerBackground"
 		elementHolderInnerBackground.Parent = elementHolderBackground
-		elementHolderInnerBackground.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(elementHolderInnerBackground, "BackgroundColor3", "MainColor")
 		elementHolderInnerBackground.BorderSizePixel = 0
 		elementHolderInnerBackground.Visible = false
 		elementHolderInnerBackground.Size = UDim2.new(1, 0, 1, 0)
@@ -2146,7 +2007,7 @@ local function createOriginalElements()
 		keybindText.Size = UDim2.new(1, -18, 1, 0)
 		keybindText.Font = Enum.Font.Gotham
 		keybindText.Text = "N/A"
-		keybindText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(keybindText, "TextColor3", "FontColor")
 		keybindText.TextSize = 14.000
 		keybindText.ClipsDescendants = true
 		keybindText.TextXAlignment = Enum.TextXAlignment.Left
@@ -2154,7 +2015,7 @@ local function createOriginalElements()
 		boxBackground.Name = "BoxBackground"
 		boxBackground.Parent = keybind
 		boxBackground.AnchorPoint = Vector2.new(1, 0)
-		boxBackground.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(boxBackground, "BackgroundColor3", "OutlineColor")
 		boxBackground.BorderSizePixel = 0
 		boxBackground.Position = UDim2.new(1, 0, 0, 0)
 		boxBackground.Size = UDim2.new(1, 0, 1, 0)
@@ -2186,12 +2047,12 @@ local function createOriginalElements()
 
 		keyText.Parent = innerBox
 		keyText.Name = "KeyText"
-		keyText.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(keyText, "BackgroundColor3", "MainColor")
 		keyText.BorderSizePixel = 0
 		keyText.Size = UDim2.new(1, 0, 1, 0)
 		keyText.Font = Enum.Font.Gotham
 		keyText.Text = "N/A"
-		keyText.TextColor3 = Color3.fromRGB(139, 141, 147)
+		Library:AddToRegistry(keyText, "TextColor3", "FontColor")
 		keyText.TextSize = 14.000
 		
 		return keybind
@@ -2225,14 +2086,14 @@ local function createOriginalElements()
 		textBoxNameText.Font = Enum.Font.Gotham
 		textBoxNameText.Text = "Textbox"
 		textBoxNameText.ClipsDescendants = true
-		textBoxNameText.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(textBoxNameText, "TextColor3", "FontColor")
 		textBoxNameText.TextSize = 14.000
 		textBoxNameText.TextXAlignment = Enum.TextXAlignment.Left
 
 		boxBackground.Name = "BoxBackground"
 		boxBackground.Parent = textBox
 		boxBackground.AnchorPoint = Vector2.new(1, 0)
-		boxBackground.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(boxBackground, "BackgroundColor3", "OutlineColor")
 		boxBackground.BorderSizePixel = 0
 		boxBackground.Position = UDim2.new(1, 0, 0, 0)
 		boxBackground.Size = UDim2.new(0.400000006, 0, 1, 0)
@@ -2261,7 +2122,7 @@ local function createOriginalElements()
 
 		textBoxText.Name = "TextBoxText"
 		textBoxText.Parent = innerBox
-		textBoxText.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(textBoxText, "BackgroundColor3", "MainColor")
 		textBoxText.BorderSizePixel = 0
 		textBoxText.ClipsDescendants = true
 		textBoxText.Size = UDim2.new(1, 0, 1, 0)
@@ -2270,7 +2131,7 @@ local function createOriginalElements()
 		textBoxText.PlaceholderText = "Type here..."
 		textBoxText.Text = ""
 		textBoxText.TextXAlignment = Enum.TextXAlignment.Left
-		textBoxText.TextColor3 = Color3.fromRGB(139, 141, 147)
+		Library:AddToRegistry(textBoxText, "TextColor3", "FontColor")
 		textBoxText.TextSize = 14.000
 		
 		return textBox
@@ -2357,14 +2218,14 @@ local function createOriginalElements()
 		colorWheelName.Font = Enum.Font.Gotham
 		colorWheelName.Text = "ColorWheel"
 		colorWheelName.ClipsDescendants = true
-		colorWheelName.TextColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(colorWheelName, "TextColor3", "FontColor")
 		colorWheelName.TextSize = 14.000
 		colorWheelName.TextXAlignment = Enum.TextXAlignment.Left
 
 		boxBackground.Name = "BoxBackground"
 		boxBackground.Parent = heading
 		boxBackground.AnchorPoint = Vector2.new(1, 0)
-		boxBackground.BackgroundColor3 = Color3.fromRGB(59, 59, 71)
+		Library:AddToRegistry(boxBackground, "BackgroundColor3", "OutlineColor")
 		boxBackground.BorderSizePixel = 0
 		boxBackground.Position = UDim2.new(1, 0, 0, 0)
 		boxBackground.Size = UDim2.new(0.174999997, 0, 1, 0)
@@ -2397,7 +2258,7 @@ local function createOriginalElements()
 		centerBox.Name = "CenterBox"
 		centerBox.Parent = innerBox
 		centerBox.AnchorPoint = Vector2.new(1, 0)
-		centerBox.BackgroundColor3 = Color3.fromRGB(31, 31, 43)
+		Library:AddToRegistry(centerBox, "BackgroundColor3", "MainColor")
 		centerBox.BorderSizePixel = 0
 		centerBox.Position = UDim2.new(1, 0, 0, 0)
 		centerBox.Size = UDim2.new(1, 0, 1, 0)
@@ -2441,7 +2302,7 @@ local function createOriginalElements()
 
 		wheelHolder.Name = "WheelHolder"
 		wheelHolder.Parent = colorWheel
-		wheelHolder.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		Library:AddToRegistry(wheelHolder, "BackgroundColor3", "MainColor")
 		wheelHolder.BackgroundTransparency = 1.000
 		wheelHolder.BorderSizePixel = 0
 		wheelHolder.Position = UDim2.new(0, 0, 0, 22)
@@ -2956,6 +2817,7 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
 	window.Instance = windowInstance
 	window.GuiToRemove = windowInstance
 	window.isConstraintedToScreenBoundaries = constrainToScreen
+	Library.Window = window
 	window.IsMinimized = false
 	window.IsHidden = false
 	window.TabInfo = {}
@@ -3008,6 +2870,76 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
 	minimizedLongBarOriginialSize = Vector2.new(heading.AbsoluteSize.X, heading.AbsoluteSize.Y)
 	minimizedShortBarOriginialSize = Vector2.new(heading.AbsoluteSize.X / 6 * 2, heading.AbsoluteSize.Y)
 	originialWindowSize = background.AbsoluteSize
+	
+	-- Mobile Toggle Button
+	if isMobileClient then
+		local MobileToggle = Instance.new("TextButton")
+		local MobileToggleCorner = Instance.new("UICorner")
+		local MobileToggleStroke = Instance.new("UIStroke")
+		
+		MobileToggle.Name = "MobileToggle"
+		MobileToggle.Parent = windowInstance
+		MobileToggle.BackgroundColor3 = Library.Scheme.MainColor
+		MobileToggle.Position = UDim2.new(0.5, -25, 0, 10)
+		MobileToggle.Size = UDim2.new(0, 50, 0, 50)
+		MobileToggle.Text = "KF"
+		MobileToggle.TextColor3 = Library.Scheme.AccentColor
+		MobileToggle.Font = Enum.Font.GothamBold
+		MobileToggle.TextSize = 18
+		MobileToggle.ZIndex = 1000
+		
+		MobileToggleCorner.CornerRadius = UDim.new(1, 0)
+		MobileToggleCorner.Parent = MobileToggle
+		
+		MobileToggleStroke.Color = Library.Scheme.AccentColor
+		MobileToggleStroke.Thickness = 2
+		MobileToggleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		MobileToggleStroke.Parent = MobileToggle
+		
+		Library:AddToRegistry(MobileToggle, "BackgroundColor3", "MainColor")
+		Library:AddToRegistry(MobileToggle, "TextColor3", "AccentColor")
+		Library:AddToRegistry(MobileToggleStroke, "Color", "AccentColor")
+		
+		-- Draggable Logic for Mobile Toggle
+		local dragging = false
+		local dragInput, dragStart, startPos
+		
+		MobileToggle.InputBegan:Connect(function(input)
+			if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+				dragging = true
+				dragStart = input.Position
+				startPos = MobileToggle.Position
+				
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						dragging = false
+					end
+				end)
+			end
+		end)
+		
+		MobileToggle.InputChanged:Connect(function(input)
+			if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				dragInput = input
+			end
+		end)
+		
+		UserInputService.InputChanged:Connect(function(input)
+			if input == dragInput and dragging then
+				local delta = input.Position - dragStart
+				MobileToggle.Position = UDim2.new(
+					startPos.X.Scale, 
+					startPos.X.Offset + delta.X, 
+					startPos.Y.Scale, 
+					startPos.Y.Offset + delta.Y
+				)
+			end
+		end)
+		
+		MobileToggle.MouseButton1Click:Connect(function()
+			background.Visible = not background.Visible
+		end)
+	end
 	
 	return window
 end
@@ -4430,7 +4362,7 @@ local ThemeManager = {} do
     end
 
     function ThemeManager:ThemeUpdate()
-        self.Library.UpdateColorsUsingRegistry()
+        self.Library:UpdateColorsUsingRegistry()
     end
 
     function ThemeManager:GetCustomTheme(file)
@@ -4454,15 +4386,81 @@ end
 
 local SaveManager = {} do
     SaveManager.Folder = "KeyForgeSettings"
-    SaveManager.SubFolder = ""
+    SaveManager.Ignore = {}
+    SaveManager.Options = Library.Options
     SaveManager.Library = Library
 
-    function SaveManager:BuildFolderTree()
-        local paths = { self.Folder .. "/settings", self.Folder .. "/settings/configs" }
-        for _, path in paths do
-            if not exploitEnv.isfolder(path) then
-                exploitEnv.makefolder(path)
-            end
+    SaveManager.Parser = {
+        Toggle = {
+            Save = function(idx, object) 
+                return { type = "Toggle", idx = idx, value = object.Value or object.Enabled } 
+            end,
+            Load = function(idx, data)
+                if SaveManager.Options[idx] then 
+                    SaveManager.Options[idx]:SetValue(data.value)
+                end
+            end,
+        },
+        Slider = {
+            Save = function(idx, object)
+                return { type = "Slider", idx = idx, value = tostring(object.Value) }
+            end,
+            Load = function(idx, data)
+                if SaveManager.Options[idx] then 
+                    SaveManager.Options[idx]:SetValue(tonumber(data.value) or data.value)
+                end
+            end,
+        },
+        Dropdown = {
+            Save = function(idx, object)
+                return { type = "Dropdown", idx = idx, value = object.Value or object.SelectedValue, multi = object.Multi }
+            end,
+            Load = function(idx, data)
+                if SaveManager.Options[idx] then 
+                    SaveManager.Options[idx]:SetValue(data.value)
+                end
+            end,
+        },
+        ColorPicker = {
+            Save = function(idx, object)
+                local color = object.Value or (object.Instance and object.Instance.WheelHolder.ValueHolder.ColorSample.BackgroundColor3) or Color3.new(1,1,1)
+                return { type = "ColorPicker", idx = idx, value = color:ToHex(), transparency = object.Transparency or 0 }
+            end,
+            Load = function(idx, data)
+                if SaveManager.Options[idx] then 
+                    if SaveManager.Options[idx].SetValueRGB then
+                        SaveManager.Options[idx]:SetValueRGB(Color3.fromHex(data.value), data.transparency)
+                    else
+                        SaveManager.Options[idx]:Set(Color3.fromHex(data.value))
+                    end
+                end
+            end,
+        },
+        Keybind = {
+            Save = function(idx, object)
+                return { type = "Keybind", idx = idx, mode = object.Mode or "Always", key = object.Value or (object.Instance and object.Instance.BoxBackground.InnerBox.KeyText.Text) }
+            end,
+            Load = function(idx, data)
+                if SaveManager.Options[idx] then 
+                    SaveManager.Options[idx]:SetValue(data.key, data.mode)
+                end
+            end,
+        },
+        Input = {
+            Save = function(idx, object)
+                return { type = "Input", idx = idx, text = object.Value or (object.Instance and object.Instance.BoxBackground.InnerBox.TextBoxText.Text) }
+            end,
+            Load = function(idx, data)
+                if SaveManager.Options[idx] and type(data.text) == "string" then
+                    SaveManager.Options[idx]:SetValue(data.text)
+                end
+            end,
+        },
+    }
+
+    function SaveManager:SetIgnoreIndexes(list)
+        for _, key in next, list do
+            self.Ignore[key] = true
         end
     end
 
@@ -4472,207 +4470,343 @@ local SaveManager = {} do
     end
 
     function SaveManager:Save(name)
-        self:CheckFolderTree()
+        if (not name) then
+            return false, "no config file is selected"
+        end
+
         local fullPath = self.Folder .. "/settings/" .. name .. ".json"
-        if SaveManager:CheckSubFolder(true) then
-            fullPath = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
-        end
 
-        local data = { objects = {} }
+        local data = {
+            objects = {}
+        }
 
-        for idx, toggle in pairs(self.Library.Toggles) do
-            if not toggle.Type then continue end
-            table.insert(data.objects, {
-                type = "Toggle",
-                idx = idx,
-                value = toggle.Enabled or false
-            })
-        end
+        for idx, option in next, SaveManager.Options do
+            if not self.Parser[option.Type] then continue end
+            if self.Ignore[idx] then continue end
 
-        for idx, option in pairs(self.Library.Options) do
-            if not option.Type then continue end
-            if option.Type == "Slider" then
-                table.insert(data.objects, {
-                    type = "Slider",
-                    idx = idx,
-                    value = tostring(option.Value or 0)
-                })
-            elseif option.Type == "Dropdown" then
-                table.insert(data.objects, {
-                    type = "Dropdown",
-                    idx = idx,
-                    value = option.Value or ""
-                })
-            elseif option.Type == "ColorPicker" then
-                table.insert(data.objects, {
-                    type = "ColorPicker",
-                    idx = idx,
-                    value = (option.Value or Color3.new()):ToHex(),
-                    transparency = option.Transparency or 0
-                })
-            elseif option.Type == "Toggle" then
-                table.insert(data.objects, {
-                    type = "Toggle",
-                    idx = idx,
-                    value = option.Value or false
-                })
-            elseif option.Type == "Input" then
-                table.insert(data.objects, {
-                    type = "Input",
-                    idx = idx,
-                    text = option.Value or ""
-                })
-            end
-        end
+            table.insert(data.objects, self.Parser[option.Type].Save(idx, option))
+        end	
 
         local success, encoded = pcall(HttpService.JSONEncode, HttpService, data)
-        if success then
-            exploitEnv.writefile(fullPath, encoded)
-            return true
+        if not success then
+            return false, "failed to encode data"
         end
-        return false, "Encoding failed"
+
+        exploitEnv.writefile(fullPath, encoded)
+        return true
     end
 
     function SaveManager:Load(name)
-        self:CheckFolderTree()
-        local file = self.Folder .. "/settings/" .. name .. ".json"
-        if SaveManager:CheckSubFolder(true) then
-            file = self.Folder .. "/settings/" .. self.SubFolder .. "/" .. name .. ".json"
+        if (not name) then
+            return false, "no config file is selected"
         end
-
-        if not exploitEnv.isfile(file) then return false, "File not found" end
+        
+        local file = self.Folder .. "/settings/" .. name .. ".json"
+        if not exploitEnv.isfile(file) then return false, "invalid file" end
 
         local success, decoded = pcall(HttpService.JSONDecode, HttpService, exploitEnv.readfile(file))
-        if not success then return false, "Decode error" end
+        if not success then return false, "decode error" end
 
-        for _, option in pairs(decoded.objects) do
-            if option.type == "Toggle" and self.Library.Toggles[option.idx] then
-                self.Library.Toggles[option.idx]:Set(option.value, function() end)
-            elseif option.type == "Slider" and self.Library.Options[option.idx] then
-                self.Library.Options[option.idx]:SetValue(platform.number(option.value) or 0, true)
-            elseif option.type == "Dropdown" and self.Library.Options[option.idx] then
-                self.Library.Options[option.idx]:SetValue(option.value, true)
-            elseif option.type == "ColorPicker" and self.Library.Options[option.idx] then
-                self.Library.Options[option.idx]:SetValueRGB(Color3.fromHex(option.value), true)
-            elseif option.type == "Input" and self.Library.Options[idx] then
-                self.Library.Options[option.idx]:SetValue(option.text, true)
+        for _, option in next, decoded.objects do
+            if self.Parser[option.type] then
+                task.spawn(function() self.Parser[option.type].Load(option.idx, option) end)
             end
         end
 
         return true
     end
 
-    function SaveManager:CheckSubFolder(createFolder)
-        if typeof(self.SubFolder) ~= "string" or self.SubFolder == "" then return false end
-
-        if createFolder == true then
-            local path = self.Folder .. "/settings/" .. self.SubFolder
-            if not exploitEnv.isfolder(path) then
-                exploitEnv.makefolder(path)
-            end
-        end
-
-        return true
+    function SaveManager:IgnoreThemeSettings()
+        self:SetIgnoreIndexes({ 
+            "InterfaceTheme", "AcrylicToggle", "TransparentToggle", "MenuKeybind"
+        })
     end
 
-    function SaveManager:CheckFolderTree()
-        if not exploitEnv.isfolder(self.Folder) then
-            self:BuildFolderTree()
+    function SaveManager:BuildFolderTree()
+        local paths = {
+            self.Folder,
+            self.Folder .. "/settings"
+        }
+
+        for i = 1, #paths do
+            local str = paths[i]
+            if not exploitEnv.isfolder(str) then
+                exploitEnv.makefolder(str)
+            end
         end
+    end
+
+    function SaveManager:RefreshConfigList()
+        if not exploitEnv.isfolder(self.Folder .. "/settings") then return {} end
+        local list = exploitEnv.listfiles(self.Folder .. "/settings")
+
+        local out = {}
+        for i = 1, #list do
+            local file = list[i]
+            if file:sub(-5) == ".json" then
+                local pos = file:find(".json", 1, true)
+                local start = pos
+
+                local char = file:sub(pos, pos)
+                while char ~= "/" and char ~= "\\" and char ~= "" do
+                    pos = pos - 1
+                    char = file:sub(pos, pos)
+                end
+
+                if char == "/" or char == "\\" then
+                    local name = file:sub(pos + 1, start - 1)
+                    if name ~= "options" then
+                        table.insert(out, name)
+                    end
+                end
+            end
+        end
+        
+        return out
+    end
+
+    function SaveManager:SetLibrary(library)
+        self.Library = library
+        self.Options = library.Options
+    end
+
+    function SaveManager:LoadAutoloadConfig()
+        if exploitEnv.isfile(self.Folder .. "/settings/autoload.txt") then
+            local name = exploitEnv.readfile(self.Folder .. "/settings/autoload.txt")
+
+            local success, err = self:Load(name)
+            if not success then
+                return self.Library:Notify({
+                    Title = "Interface",
+                    Content = "Config loader",
+                    Description = "Failed to load autoload config: " .. err,
+                    Duration = 7
+                })
+            end
+
+            self.Library:Notify({
+                Title = "Interface",
+                Content = "Config loader",
+                Description = string.format("Auto loaded config %q", name),
+                Duration = 7
+            })
+        end
+    end
+
+    function SaveManager:BuildConfigSection(tab)
+        assert(self.Library, "Must set SaveManager.Library")
+
+        local section = tab:AddSection("Configuration")
+
+        section:AddInput("SaveManager_ConfigName",    { Title = "Config name" })
+        section:AddDropdown("SaveManager_ConfigList", { Title = "Config list", Values = self:RefreshConfigList(), AllowNull = true })
+
+        section:AddButton({
+            Title = "Create config",
+            Callback = function()
+                local name = SaveManager.Options.SaveManager_ConfigName.Value
+
+                if name:gsub(" ", "") == "" then 
+                    return self.Library:Notify({
+                        Title = "Interface",
+                        Content = "Config loader",
+                        Description = "Invalid config name (empty)",
+                        Duration = 7
+                    })
+                end
+
+                local success, err = self:Save(name)
+                if not success then
+                    return self.Library:Notify({
+                        Title = "Interface",
+                        Content = "Config loader",
+                        Description = "Failed to save config: " .. err,
+                        Duration = 7
+                    })
+                end
+
+                self.Library:Notify({
+                    Title = "Interface",
+                    Content = "Config loader",
+                    Description = string.format("Created config %q", name),
+                    Duration = 7
+                })
+
+                SaveManager.Options.SaveManager_ConfigList:SetValues(self:RefreshConfigList())
+                SaveManager.Options.SaveManager_ConfigList:SetValue(nil)
+            end
+        })
+
+        section:AddButton({Title = "Load config", Callback = function()
+            local name = SaveManager.Options.SaveManager_ConfigList.Value
+
+            local success, err = self:Load(name)
+            if not success then
+                return self.Library:Notify({
+                    Title = "Interface",
+                    Content = "Config loader",
+                    Description = "Failed to load config: " .. err,
+                    Duration = 7
+                })
+            end
+
+            self.Library:Notify({
+                Title = "Interface",
+                Content = "Config loader",
+                Description = string.format("Loaded config %q", name),
+                Duration = 7
+            })
+        end})
+
+        section:AddButton({Title = "Overwrite config", Callback = function()
+            local name = SaveManager.Options.SaveManager_ConfigList.Value
+
+            local success, err = self:Save(name)
+            if not success then
+                return self.Library:Notify({
+                    Title = "Interface",
+                    Content = "Config loader",
+                    Description = "Failed to overwrite config: " .. err,
+                    Duration = 7
+                })
+            end
+
+            self.Library:Notify({
+                Title = "Interface",
+                Content = "Config loader",
+                Description = string.format("Overwrote config %q", name),
+                Duration = 7
+            })
+        end})
+
+        section:AddButton({Title = "Refresh list", Callback = function()
+            SaveManager.Options.SaveManager_ConfigList:SetValues(self:RefreshConfigList())
+            SaveManager.Options.SaveManager_ConfigList:SetValue(nil)
+        end})
+
+        local AutoloadButton
+        AutoloadButton = section:AddButton({Title = "Set as autoload", Description = "Current autoload config: none", Callback = function()
+            local name = SaveManager.Options.SaveManager_ConfigList.Value
+            exploitEnv.writefile(self.Folder .. "/settings/autoload.txt", name)
+            AutoloadButton:SetDesc("Current autoload config: " .. name)
+            self.Library:Notify({
+                Title = "Interface",
+                Content = "Config loader",
+                Description = string.format("Set %q to auto load", name),
+                Duration = 7
+            })
+        end})
+
+        if exploitEnv.isfile(self.Folder .. "/settings/autoload.txt") then
+            local name = exploitEnv.readfile(self.Folder .. "/settings/autoload.txt")
+            AutoloadButton:SetDesc("Current autoload config: " .. name)
+        end
+
+        SaveManager:SetIgnoreIndexes({ "SaveManager_ConfigList", "SaveManager_ConfigName" })
     end
 
     SaveManager:BuildFolderTree()
+    Library.SaveManager = SaveManager
 end
 
--- Integrate Managers to add theme/config tabs
-function Library:ApplyThemeManager(tab, groupboxName)
-    if not tab then return end
-    local groupbox = tab:AddRightGroupbox(groupboxName or "ThemeManager", "palette")
+local InterfaceManager = {} do
+    InterfaceManager.Folder = "KeyForgeSettings"
+    InterfaceManager.Settings = {
+        Theme = "Default",
+        Acrylic = false,
+        Transparency = false,
+        MenuKeybind = "RightControl"
+    }
+    InterfaceManager.Library = Library
 
-    groupbox:AddLabel("Colors", true)
-    groupbox:AddColorPicker("BackgroundColor", { Default = self.Scheme.BackgroundColor })
-    groupbox:AddColorPicker("MainColor", { Default = self.Scheme.MainColor })
-    groupbox:AddColorPicker("AccentColor", { Default = self.Scheme.AccentColor })
-    groupbox:AddColorPicker("OutlineColor", { Default = self.Scheme.OutlineColor })
-    groupbox:AddColorPicker("FontColor", { Default = self.Scheme.FontColor })
-
-    groupbox:AddDropdown("FontFace", {
-        Text = "Font Face",
-        Default = "Code",
-        Values = { "BuilderSans", "Code", "Fantasy", "Gotham", "Jura", "Roboto", "RobotoMono", "SourceSans" },
-    })
-
-    local themeList = {}
-    for name in pairs(ThemeManager.BuiltInThemes) do
-        table.insert(themeList, name)
+    function InterfaceManager:SetFolder(folder)
+        self.Folder = folder
+        self:BuildFolderTree()
     end
 
-    groupbox:AddDropdown("ThemeList", { Text = "Themes", Values = themeList, Default = 1 })
-    groupbox:AddButton("Apply Theme", function()
-        local selectedTheme = self.Options.ThemeList:GetValue()
-        ThemeManager:ApplyTheme(selectedTheme)
-    end)
-
-    groupbox:AddButton("Reset to Default", function()
-        ThemeManager:ApplyTheme("Default")
-    end)
-
-    -- Apply changes when color pickers change
-    local colorPickers = { "BackgroundColor", "MainColor", "AccentColor", "OutlineColor", "FontColor" }
-    for _, picker in colorPickers do
-        self.Options[picker]:OnChanged(function()
-            self.Scheme[picker] = self.Options[picker].Value
-            ThemeManager:ThemeUpdate()
-        end)
+    function InterfaceManager:SetLibrary(library)
+        self.Library = library
     end
 
-    self.Options.FontFace:OnChanged(function()
-        self:SetFont(Enum.Font[self.Options.FontFace.Value])
-        ThemeManager:ThemeUpdate()
-    end)
-
-    -- Attach Options to Library elements (this is a basic implementation)
-    function groupbox:AddColorPicker(idx, info)
-        local colorPicker = self:AddColorPicker(idx, info)
-        self.Library.Options[idx] = colorPicker
-        return colorPicker
+    function InterfaceManager:BuildFolderTree()
+        if not exploitEnv.isfolder(self.Folder) then exploitEnv.makefolder(self.Folder) end
     end
 
-    function groupbox:AddDropdown(idx, info)
-        local dropdown = self:AddDropdown(idx, info)
-        self.Library.Options[idx] = dropdown
-        return dropdown
+    function InterfaceManager:SaveSettings()
+        exploitEnv.writefile(self.Folder .. "/options.json", HttpService:JSONEncode(self.Settings))
     end
-end
 
-function Library:ApplySaveManager(tab, groupboxName)
-    if not tab then return end
-    local groupbox = tab:AddRightGroupbox(groupboxName or "SaveManager", "hard-drive")
-
-    groupbox:AddInput("ConfigName", { Text = "Config name" })
-    groupbox:AddButton("Save Config", function()
-        local name = self.Options.ConfigName:GetValue() or "default"
-        SaveManager:Save(name)
-        self:Notify("Saved config: " .. name)
-    end)
-
-    groupbox:AddButton("Load Config", function()
-        local name = self.Options.ConfigName:GetValue() or "default"
-        local success = SaveManager:Load(name)
-        if success then
-            self:Notify("Loaded config: " .. name)
-        else
-            self:Notify("Failed to load config: " .. name)
+    function InterfaceManager:LoadSettings()
+        local path = self.Folder .. "/options.json"
+        if exploitEnv.isfile(path) then
+            local data = exploitEnv.readfile(path)
+            local success, decoded = pcall(HttpService.JSONDecode, HttpService, data)
+            if success then
+                for i, v in next, decoded do
+                    self.Settings[i] = v
+                end
+            end
         end
-    end)
-
-    -- Attach Option
-    function groupbox:AddInput(idx, info)
-        local input = self:AddInput(idx, info)
-        self.Library.Options[idx] = input
-        return input
     end
+
+    function InterfaceManager:BuildInterfaceSection(tab)
+        assert(self.Library, "Must set InterfaceManager.Library")
+        local Library = self.Library
+        local Settings = self.Settings
+
+        self:LoadSettings()
+
+        local section = tab:AddSection("Interface")
+
+        local themeList = {}
+        for name in pairs(ThemeManager.BuiltInThemes) do themeList[#themeList+1] = name end
+
+        local InterfaceTheme = section:AddDropdown("InterfaceTheme", {
+            Title = "Theme",
+            Description = "Changes the interface theme.",
+            Values = themeList,
+            Default = Settings.Theme,
+            Callback = function(Value)
+                ThemeManager:ApplyTheme(Value)
+                Settings.Theme = Value
+                self:SaveSettings()
+            end
+        })
+
+        InterfaceTheme:SetValue(Settings.Theme)
+    
+        section:AddToggle("TransparentToggle", {
+            Title = "Transparency",
+            Description = "Makes the interface transparent.",
+            Default = Settings.Transparency,
+            Callback = function(Value)
+                if Library.Window then
+                    TweenService:Create(Library.Window.Background, TweenInfo.new(0.5), {BackgroundTransparency = Value and 0.5 or 0}):Play()
+                end
+                Settings.Transparency = Value
+                self:SaveSettings()
+            end
+        })
+    
+        local MenuKeybind = section:AddKeybind("MenuKeybind", { Title = "Minimize Bind", Default = Settings.MenuKeybind })
+        MenuKeybind:OnChanged(function()
+            Settings.MenuKeybind = MenuKeybind.Value
+            self:SaveSettings()
+        end)
+        Library.MinimizeKeybind = MenuKeybind
+    end
+    
+    Library.InterfaceManager = InterfaceManager
 end
+
+function Library:ApplySaveManager(tab)
+    SaveManager:BuildConfigSection(tab)
+end
+
+function Library:ApplyInterfaceManager(tab)
+    InterfaceManager:BuildInterfaceSection(tab)
+end
+
 
 -- Update existing elements to track in Options/Toggles (minimal integration due to existing structure)
 -- Note: Full integration would require modifying all element creation to register with Library.Options/Toggles
@@ -4700,7 +4834,7 @@ function elementHandler:WarningBox(titleText: string, descriptionText: string, w
     titleLabel.BackgroundTransparency = 1
     titleLabel.Font = Enum.Font.GothamBold
     titleLabel.Text = titleText or "Warning"
-    titleLabel.TextColor3 = Library.Scheme.FontColor
+    Library:AddToRegistry(titleLabel, "TextColor3", "FontColor")
     titleLabel.TextSize = 14
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Size = UDim2.new(1, 0, 0, 18)
@@ -4712,7 +4846,7 @@ function elementHandler:WarningBox(titleText: string, descriptionText: string, w
     descLabel.BackgroundTransparency = 1
     descLabel.Font = Enum.Font.Gotham
     descLabel.Text = descriptionText or "Please check your settings."
-    descLabel.TextColor3 = Library.Scheme.FontColor
+    Library:AddToRegistry(descLabel, "TextColor3", "FontColor")
     descLabel.TextSize = 13
     descLabel.TextWrapped = true
     descLabel.TextXAlignment = Enum.TextXAlignment.Left
