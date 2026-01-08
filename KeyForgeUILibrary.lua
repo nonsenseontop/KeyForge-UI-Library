@@ -1536,9 +1536,9 @@ local function createOriginalElements()
 		innerCirclePadding.Name = "InnerCirclePadding"
 		innerCirclePadding.Parent = innerCircle
 		innerCirclePadding.PaddingBottom = UDim.new(0, 1)
-		innerBoxPadding.PaddingLeft = UDim.new(0, 1)
-		innerBoxPadding.PaddingRight = UDim.new(0, 1)
-		innerBoxPadding.PaddingTop = UDim.new(0, 1)
+		innerCirclePadding.PaddingLeft = UDim.new(0, 1)
+		innerCirclePadding.PaddingRight = UDim.new(0, 1)
+		innerCirclePadding.PaddingTop = UDim.new(0, 1)
 
 		centerCircle.Name = "CenterCircle"
 		centerCircle.Parent = innerCircle
