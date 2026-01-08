@@ -8,10 +8,7 @@ A comprehensive, production-ready UI library for Roblox scripts featuring deep t
 - **💾 Advanced Save System**: Persistent configuration saving/loading with auto-registration
 - **📢 Professional Notifications**: Rich notification system with animations, DPI scaling, and structured content
 - **🔧 Automatic Manager Setup**: One-line functions to add theme/config tabs to any window
-- **📱 Enhanced Mobile Support**: Responsive design with touch optimizations and DPI scaling
-- **⚠️ Warning Box System**: Color-coded alerts for different message types (Info, Warning, Error, Success)
-- **🛠️ Helper Utilities**: MakeOutline for consistent UI framing and enhanced tooltip system
-- **🎯 Easy-to-Use API**: Intuitive method calls for creating complex UIs
+- **📱 Advanced Mobile Support**: Draggable "KF" toggle button, responsive design, and robust multi-sensor hardware detection
 - **📐 Perfect Scaling**: DPI-aware elements that look crisp on any resolution
 
 ## Installation
@@ -229,7 +226,8 @@ Most UI elements can be added to any section or container:
 - **🔧 Automatic Manager Setup**: One-line functions to add theme/config tabs
 - **📐 DPI Scaling Support**: Perfect scaling across all resolutions
 - **🛠️ Helper Utilities**: MakeOutline for consistent borders, enhanced tooltips
-- **📱 Improved Mobile Support**: Touch optimizations and responsive design
+- **📐 DPI Scaling Support**: Perfect scaling across all resolutions
+- **📱 Advanced Mobile Support**: Draggable "KF" toggle button and refined multi-sensor hardware detection to distinguish mobile devices from touch laptops
 
 ## Configuration
 
@@ -262,9 +260,9 @@ The library includes an advanced configuration system with:
 - Force reload the script after changing resolutions
 - Check that DPI scaling is set to 1.0 if experiencing issues
 
-### Mobile Responsiveness
-- On mobile devices, interface automatically adjusts size
-- Touch controls are optimized for smaller screens
+- **Mobile Toggle**: A dedicated draggable button (branded "KF") allows mobile users to easily toggle UI visibility.
+- **Advanced Detection**: Uses accelerometer and input device checks to ensure the mobile interface only appears on true mobile/tablet hardware, not touch-screen laptops.
+- **Responsive Layout**: On mobile devices, the interface automatically adjusts its size and organization.
 
 ## Contributing
 
