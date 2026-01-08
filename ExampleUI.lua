@@ -25,9 +25,10 @@ MainSection:Button("Action Button", function()
     })
 end)
 
-MainSection:Slider("Power Level", 50, function(value)
+local PowerSlider = MainSection:Slider("Power Level", function(value)
     print("Slider value:", value)
 end, 100, 0)
+PowerSlider:Set(50)
 
 MainSection:Dropdown("Select Mode", {"Standard", "Advanced", "Elite", "Legendary"}, "Standard", function(value)
     Library:Notify("Mode set to: " .. value)
