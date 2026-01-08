@@ -611,7 +611,29 @@ function tabHandler:AddLeftGroupbox(name) return self:Section(name) end
 function tabHandler:AddSection(name) return self:Section(name) end
 
 function elementHandler:AddLabel(text) return self:Label(text) end
-function elementHandler:AddButton(name, cb) return self:Button(name, cb) end
+function elementHandler:AddButton(name, cb)
+    if typeof(name) == "table" then
+        return self:Button(name.Title or name.Text or "Button", name.Callback)
+    end
+    return self:Button(name, cb)
+end
+
+function elementHandler:AddKeybind(idx, info)
+    local default = info.Default or info.Standard or "F"
+    local kb = self:Keybind(info.Text or idx, info.Callback or info.OnChanged, default)
+    kb.OnChanged = function(s, f) kb.Callback = f end
+    kb.GetValue = function(s) return tostring(kb.Value or default) end
+    kb.SetValue = function(s, v)
+        if typeof(v) == "string" then
+            kb.Value = Enum.KeyCode[v]
+        else
+            kb.Value = v
+        end
+        kb.Instance.BoxBackground.InnerBox.KeyText.Text = kb.Value.Name
+    end
+    if Library.RegisterOption then Library:RegisterOption(kb, idx, "Keybind", default) end
+    return kb
+end
 
 function elementHandler:AddToggle(idx, info)
     local default = info.Default or false
@@ -3963,6 +3985,7 @@ function elementHandler:Keybind(keybindName: string, callback, defaultKey: strin
 
 		repeat task.wait() until not inputBeingProcessed
 		defaultKey = input.KeyCode
+		keybind.Value = input.KeyCode
 	end
 	
 	local function onInputBegan(input, gameProcessedEvent)
@@ -4003,6 +4026,7 @@ function elementHandler:Keybind(keybindName: string, callback, defaultKey: strin
 	
 	defaultKey = getMatchingKeyCodeFromName(defaultKey)
 	
+	keybind.Value = defaultKey
 	keybindInstance.Parent = self.ElementToParentChildren
 	originialOffsetSize = keybindInstance.BoxBackground.AbsoluteSize
 	keybindInstance.BoxBackground.Size = UDim2.fromOffset(originialOffsetSize.X,originialOffsetSize.Y)
