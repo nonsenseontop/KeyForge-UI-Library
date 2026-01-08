@@ -3420,6 +3420,8 @@ function elementHandler:Button(buttonName: string, callback): table -- Add Callb
 	buttonInstance.Parent = self.ElementToParentChildren
 	buttonInstance.ButtonText.Size = UDim2.new(1,-(buttonInstance.CircleBackground.AbsoluteSize.X + textOffset),1,0)
 	buttonInstance.ButtonText.Position = UDim2.fromOffset(buttonInstance.CircleBackground.AbsoluteSize.X + textOffset,0)
+
+	return button
 end
 
 function elementHandler:Dropdown(dropdownName: string, optionList, param3, param4): table
@@ -4032,6 +4034,8 @@ function elementHandler:Keybind(keybindName: string, callback, defaultKey: strin
 	keybindInstance.BoxBackground.Size = UDim2.fromOffset(originialOffsetSize.X,originialOffsetSize.Y)
 	keybindInstance.BoxBackground.BoxAspect:Destroy()
 	keybindInstance.KeybindText.Size = UDim2.new(1,-(originialOffsetSize.X + keybindTextPadding),1,0)
+
+	return keybind
 end
 
 function elementHandler:TextBox(textBoxName:string, callback): table
