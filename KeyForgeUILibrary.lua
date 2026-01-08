@@ -640,7 +640,7 @@ function elementHandler:AddToggle(idx, info)
     local cb = info.Callback or info.OnChanged or function() end
     local t
     t = self:Toggle(info.Text or idx, default, function(v)
-        t.Value = v
+        if t then t.Value = v end
         cb(v)
     end)
     t.Value = default
@@ -658,7 +658,7 @@ function elementHandler:AddSlider(idx, info)
     local cb = info.Callback or info.OnChanged or function() end
     local s
     s = self:Slider(info.Text or idx, function(v)
-        s.Value = v
+        if s then s.Value = v end
         cb(v)
     end, max, min)
     s.Value = default
@@ -676,7 +676,7 @@ function elementHandler:AddDropdown(idx, info)
     local cb = info.Callback or info.OnChanged or function() end
     local d
     d = self:Dropdown(info.Text or idx, list, default, function(v)
-        d.Value = v
+        if d then d.Value = v end
         cb(v)
     end)
     d.Value = default
@@ -690,9 +690,15 @@ end
 
 function elementHandler:AddColorPicker(idx, info)
     local default = info.Default or Color3.new(1, 1, 1)
-    local cp = self:ColorWheel(info.Text or idx, default, info.Callback or info.OnChanged)
-    cp.OnChanged = function(s, f) cp.Callback = f end
-    cp.GetValue = function(s) return cp.Instance.WheelHolder.ValueHolder.ColorSample.BackgroundColor3 end -- Crude but works
+    local cb = info.Callback or info.OnChanged or function() end
+    local cp
+    cp = self:ColorWheel(info.Text or idx, default, function(v)
+        if cp then cp.Value = v end
+        cb(v)
+    end)
+    cp.Value = default
+    cp.OnChanged = function(s, f) cb = f end
+    cp.GetValue = function(s) return cp.Value end
     cp.SetValue = function(s, v) cp:Set(v) end
     cp.SetValueRGB = function(s, v) cp:Set(v) end
     if Library.RegisterOption then Library:RegisterOption(cp, idx, "ColorPicker", default) end
@@ -701,9 +707,15 @@ end
 
 function elementHandler:AddInput(idx, info)
     local default = info.Default or ""
-    local tb = self:TextBox(info.Text or idx, info.Callback or info.OnChanged)
-    tb.OnChanged = function(s, f) tb.Callback = f end
-    tb.GetValue = function(s) return tb.Instance.BoxBackground.InnerBox.TextBoxText.Text end
+    local cb = info.Callback or info.OnChanged or function() end
+    local tb
+    tb = self:TextBox(info.Text or idx, function(v)
+        if tb then tb.Value = v end
+        cb(v)
+    end)
+    tb.Value = default
+    tb.OnChanged = function(s, f) cb = f end
+    tb.GetValue = function(s) return tb.Value end
     tb.SetValue = function(s, v) tb.Instance.BoxBackground.InnerBox.TextBoxText.Text = v end
     if Library.RegisterOption then Library:RegisterOption(tb, idx, "Input", default) end
     return tb
