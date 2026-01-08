@@ -1,13 +1,11 @@
 -- ExampleUI.lua
 -- This script demonstrates EVERY feature of the KeyForge UI Library.
 
--- Load the library (assuming it's in the same environment or via URL)
+-- Load the library from the GitHub repository
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/nonsenseontop/KeyForge-UI-Library/master/KeyForgeUILibrary.lua"))()
--- For testing purposes, we assume 'Library' is already global or required.
-local Library = loadstring(readfile("KeyForgeUILibrary.lua"))()
 
 -- Create a new window
-local Window = Library:new("KeyForge Feature Showreel", true, 600, 450, "RightControl")
+local Window = Library.new("KeyForge Feature Showreel", true, 600, 450, "RightControl")
 
 -- 1. MAIN TAB: Basic Elements
 local MainTab = Window:Tab("Main Elements", "rbxassetid://11436779516")

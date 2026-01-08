@@ -2690,10 +2690,11 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
 	local holder = background.Holder
 	local snowEffect = holder:FindFirstChild("SnowEffect")
 
-	local function getMatchingKeyCodeFromName(name: string)
-		if not name then return end
-		for i, keycode in pairs(Enum.KeyCode:GetEnumItems()) do
-			if keycode.Name:lower() == name:lower() then
+	local function getMatchingKeyCodeFromName(name)
+		if type(name) ~= "string" then return end
+		local nameLower = name:lower()
+		for _, keycode in ipairs(Enum.KeyCode:GetEnumItems()) do
+			if keycode.Name:lower() == nameLower then
 				return keycode
 			end
 		end
@@ -3915,10 +3916,11 @@ function elementHandler:Keybind(keybindName: string, callback, defaultKey: strin
 	keybindName = keybindName or "N/A"
 	defaultKey = defaultKey or "F"
 	
-	local function getMatchingKeyCodeFromName(name: string)
-		if not name then return end
-		for i, keycode in pairs(Enum.KeyCode:GetEnumItems()) do
-			if keycode.Name:lower() == name:lower() then
+	local function getMatchingKeyCodeFromName(name)
+		if type(name) ~= "string" then return end
+		local nameLower = name:lower()
+		for _, keycode in ipairs(Enum.KeyCode:GetEnumItems()) do
+			if keycode.Name:lower() == nameLower then
 				return keycode
 			end
 		end
@@ -4804,6 +4806,10 @@ function Library:ApplySaveManager(tab)
 end
 
 function Library:ApplyInterfaceManager(tab)
+    InterfaceManager:BuildInterfaceSection(tab)
+end
+
+function Library:ApplyThemeManager(tab)
     InterfaceManager:BuildInterfaceSection(tab)
 end
 
