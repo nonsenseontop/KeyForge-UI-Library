@@ -2734,7 +2734,10 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
         local closeWindowTween = TweenService:Create(windowInstance.Background, TweenInfo.new(.15, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0,0,0,0)})
         closeWindowTween.Completed:Connect(function()
             task.wait()
-			windowInstance:Destroy() -- add cool tween cause cool
+			if Library.Window == window then
+				Library.Window = nil
+			end
+			windowInstance:Destroy()
             window = nil
         end)
         closeWindowTween:Play()
@@ -2816,6 +2819,7 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
 
 	window.Type = "Window"
 	window.Instance = windowInstance
+	window.Background = background
 	window.GuiToRemove = windowInstance
 	window.isConstraintedToScreenBoundaries = constrainToScreen
 	Library.Window = window
