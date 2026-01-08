@@ -638,9 +638,14 @@ end
 function elementHandler:AddToggle(idx, info)
     local default = info.Default or false
     local cb = info.Callback or info.OnChanged or function() end
-    local t = self:Toggle(info.Text or idx, default, cb)
-    t.OnChanged = function(s, f) t.Callback = f end
-    t.GetValue = function(s) return t.Enabled end
+    local t
+    t = self:Toggle(info.Text or idx, default, function(v)
+        t.Value = v
+        cb(v)
+    end)
+    t.Value = default
+    t.OnChanged = function(s, f) cb = f end
+    t.GetValue = function(s) return t.Value end
     t.SetValue = function(s, v) t:Set(v) end
     if Library.RegisterToggle then Library:RegisterToggle(t, idx, default) end
     return t
@@ -650,9 +655,15 @@ function elementHandler:AddSlider(idx, info)
     local min = info.Min or 0
     local max = info.Max or 100
     local default = info.Default or min
-    local s = self:Slider(info.Text or idx, info.Callback or info.OnChanged, max, min)
+    local cb = info.Callback or info.OnChanged or function() end
+    local s
+    s = self:Slider(info.Text or idx, function(v)
+        s.Value = v
+        cb(v)
+    end, max, min)
+    s.Value = default
     s:Set(default)
-    s.OnChanged = function(self_s, f) s.Callback = f end
+    s.OnChanged = function(self_s, f) cb = f end
     s.GetValue = function(s) return s.Value end
     s.SetValue = function(s, v) s:Set(v) end
     if Library.RegisterOption then Library:RegisterOption(s, idx, "Slider", default) end
@@ -662,10 +673,17 @@ end
 function elementHandler:AddDropdown(idx, info)
     local list = info.Values or info.List or {}
     local default = info.Default or list[1]
-    local d = self:Dropdown(info.Text or idx, list, default, info.Callback or info.OnChanged)
-    d.OnChanged = function(s, f) d.Callback = f end
-    d.GetValue = function(s) return d.SelectedValue end
+    local cb = info.Callback or info.OnChanged or function() end
+    local d
+    d = self:Dropdown(info.Text or idx, list, default, function(v)
+        d.Value = v
+        cb(v)
+    end)
+    d.Value = default
+    d.OnChanged = function(s, f) cb = f end
+    d.GetValue = function(s) return d.Value end
     d.SetValue = function(s, v) d:Select(v) end
+    d.SetValues = function(s, v) d:SetOptions(v) end
     if Library.RegisterOption then Library:RegisterOption(d, idx, "Dropdown", default) end
     return d
 end
@@ -4721,6 +4739,7 @@ local SaveManager = {} do
         local AutoloadButton
         AutoloadButton = section:AddButton({Title = "Set as autoload", Description = "Current autoload config: none", Callback = function()
             local name = SaveManager.Options.SaveManager_ConfigList.Value
+            if not name then return end
             exploitEnv.writefile(self.Folder .. "/settings/autoload.txt", name)
             AutoloadButton:SetDesc("Current autoload config: " .. name)
             self.Library:Notify({
