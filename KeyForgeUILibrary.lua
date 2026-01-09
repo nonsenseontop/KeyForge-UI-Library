@@ -162,6 +162,7 @@ local originalElements = {}
 -- Add Tween Dictonary with format Tweens.ElementType.TweenName to ignore repetitive variables
 
 local Library = {}
+Library.IsMobile = isMobileClient
 local elementHandler = {}
 local windowHandler = {}
 local tabHandler = {}
@@ -2725,6 +2726,81 @@ function elementHandler:Remove()
 	self.GuiToRemove:Destroy()
 end
 
+function Library:CreateMobileButton(config)
+	local buttonName = config.Name or "MobileButton"
+	local buttonText = config.Text or "MB"
+	local buttonPos = config.Position or UDim2.new(0.5, -25, 0, 10)
+	local callback = config.Callback or function() end
+	local parent = config.Parent or game:GetService("CoreGui")
+
+	local MobileButton = Instance.new("TextButton")
+	local MobileCorner = Instance.new("UICorner")
+	local MobileStroke = Instance.new("UIStroke")
+	
+	MobileButton.Name = buttonName
+	MobileButton.Parent = parent
+	MobileButton.BackgroundColor3 = Library.Scheme.MainColor
+	MobileButton.Position = buttonPos
+	MobileButton.Size = UDim2.new(0, 50, 0, 50)
+	MobileButton.Text = buttonText
+	MobileButton.TextColor3 = Library.Scheme.AccentColor
+	MobileButton.Font = Enum.Font.GothamBold
+	MobileButton.TextSize = 18
+	MobileButton.ZIndex = 1000
+	
+	MobileCorner.CornerRadius = UDim.new(1, 0)
+	MobileCorner.Parent = MobileButton
+	
+	MobileStroke.Color = Library.Scheme.AccentColor
+	MobileStroke.Thickness = 2
+	MobileStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	MobileStroke.Parent = MobileButton
+	
+	Library:AddToRegistry(MobileButton, "BackgroundColor3", "MainColor")
+	Library:AddToRegistry(MobileButton, "TextColor3", "AccentColor")
+	Library:AddToRegistry(MobileStroke, "Color", "AccentColor")
+	
+	-- Draggable Logic for Mobile Button
+	local dragging = false
+	local dragInput, dragStart, startPos
+	
+	MobileButton.InputBegan:Connect(function(input)
+		if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+			dragging = true
+			dragStart = input.Position
+			startPos = MobileButton.Position
+			
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	
+	MobileButton.InputChanged:Connect(function(input)
+		if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			dragInput = input
+		end
+	end)
+	
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			local delta = input.Position - dragStart
+			MobileButton.Position = UDim2.new(
+				startPos.X.Scale, 
+				startPos.X.Offset + delta.X, 
+				startPos.Y.Scale, 
+				startPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+	
+	MobileButton.MouseButton1Click:Connect(callback)
+	
+	return MobileButton
+end
+
 --Add zindex var to determine which window goes over which
 --Add var to only have one window open at a time allowed
 function Library.new(windowName: string, constrainToScreen: boolean?, width: number?, height: number?, visibilityKeybind: string?, backgroundImageId: string?): table
@@ -2930,72 +3006,15 @@ function Library.new(windowName: string, constrainToScreen: boolean?, width: num
 	
 	-- Mobile Toggle Button
 	if isMobileClient then
-		local MobileToggle = Instance.new("TextButton")
-		local MobileToggleCorner = Instance.new("UICorner")
-		local MobileToggleStroke = Instance.new("UIStroke")
-		
-		MobileToggle.Name = "MobileToggle"
-		MobileToggle.Parent = windowInstance
-		MobileToggle.BackgroundColor3 = Library.Scheme.MainColor
-		MobileToggle.Position = UDim2.new(0.5, -25, 0, 10)
-		MobileToggle.Size = UDim2.new(0, 50, 0, 50)
-		MobileToggle.Text = "KF"
-		MobileToggle.TextColor3 = Library.Scheme.AccentColor
-		MobileToggle.Font = Enum.Font.GothamBold
-		MobileToggle.TextSize = 18
-		MobileToggle.ZIndex = 1000
-		
-		MobileToggleCorner.CornerRadius = UDim.new(1, 0)
-		MobileToggleCorner.Parent = MobileToggle
-		
-		MobileToggleStroke.Color = Library.Scheme.AccentColor
-		MobileToggleStroke.Thickness = 2
-		MobileToggleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		MobileToggleStroke.Parent = MobileToggle
-		
-		Library:AddToRegistry(MobileToggle, "BackgroundColor3", "MainColor")
-		Library:AddToRegistry(MobileToggle, "TextColor3", "AccentColor")
-		Library:AddToRegistry(MobileToggleStroke, "Color", "AccentColor")
-		
-		-- Draggable Logic for Mobile Toggle
-		local dragging = false
-		local dragInput, dragStart, startPos
-		
-		MobileToggle.InputBegan:Connect(function(input)
-			if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-				dragging = true
-				dragStart = input.Position
-				startPos = MobileToggle.Position
-				
-				input.Changed:Connect(function()
-					if input.UserInputState == Enum.UserInputState.End then
-						dragging = false
-					end
-				end)
+		window.MobileToggle = Library:CreateMobileButton({
+			Name = "WindowToggle",
+			Text = "KF",
+			Position = UDim2.new(0.5, -25, 0, 10),
+			Parent = windowInstance,
+			Callback = function()
+				background.Visible = not background.Visible
 			end
-		end)
-		
-		MobileToggle.InputChanged:Connect(function(input)
-			if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-				dragInput = input
-			end
-		end)
-		
-		UserInputService.InputChanged:Connect(function(input)
-			if input == dragInput and dragging then
-				local delta = input.Position - dragStart
-				MobileToggle.Position = UDim2.new(
-					startPos.X.Scale, 
-					startPos.X.Offset + delta.X, 
-					startPos.Y.Scale, 
-					startPos.Y.Offset + delta.Y
-				)
-			end
-		end)
-		
-		MobileToggle.MouseButton1Click:Connect(function()
-			background.Visible = not background.Visible
-		end)
+		})
 	end
 	
 	return window
